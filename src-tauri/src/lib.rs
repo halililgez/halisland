@@ -1,12 +1,16 @@
 mod claude;
 mod island;
+mod media;
 
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![island::resize_island])
+        .invoke_handler(tauri::generate_handler![
+            island::resize_island,
+            media::media_control
+        ])
         .setup(|app| {
             // macOS: Dock'ta ve Cmd+Tab'de görünmesin, sadece ada olarak yaşasın.
             #[cfg(target_os = "macos")]
@@ -20,6 +24,9 @@ pub fn run() {
 
             // Claude Code hook'larını dinleyen küçük yerel HTTP sunucusu.
             claude::start_server(app.handle().clone());
+
+            // Çalan müzik (Windows: SMTC).
+            media::start_watcher(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

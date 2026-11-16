@@ -2,7 +2,7 @@ import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 export const COMPACT = { width: 320, height: 44 };
-export const EXPANDED = { width: 640, height: 196 };
+export const EXPANDED = { width: 720, height: 200 };
 
 /** CSS geçiş süresiyle aynı olmalı (App.vue → .island transition). */
 const TRANSITION_MS = 380;
