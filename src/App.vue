@@ -1,0 +1,238 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import Tile from "./components/Tile.vue";
+import { useClock } from "./composables/useClock";
+import { useFocusTimer } from "./composables/useFocusTimer";
+import { useClaudeStatus, type ClaudeState } from "./composables/useClaudeStatus";
+import { COMPACT, EXPANDED, useIsland } from "./composables/useIsland";
+
+const { time, date } = useClock();
+const focus = useFocusTimer(25);
+const claude = useClaudeStatus();
+const island = useIsland(() => claude.markSeen());
+
+const CLAUDE_COLORS: Record<ClaudeState, string | undefined> = {
+  idle: undefined,
+  working: "var(--c-working)",
+  waiting: "var(--c-waiting)",
+  done: "var(--c-done)",
+  seen: "var(--c-seen)",
+};
+const claudeColor = computed(() => CLAUDE_COLORS[claude.state.value]);
+
+const focusActive = computed(() => focus.state.value !== "idle");
+const focusColor = computed(() =>
+  focus.state.value === "running" || focus.state.value === "finished"
+    ? "var(--c-focus)"
+    : undefined,
+);
+
+const islandStyle = computed(() => {
+  const size = island.expanded.value ? EXPANDED : COMPACT;
+  return { width: `${size.width}px`, height: `${size.height}px` };
+});
+</script>
+
+<template>
+  <div
+    class="island"
+    :class="{ expanded: island.expanded.value }"
+    :style="islandStyle"
+    @mouseenter="island.hoverIn"
+    @mouseleave="island.hoverOut"
+  >
+    <!-- Kompakt görünüm -->
+    <div v-if="!island.expanded.value" class="compact" data-tauri-drag-region>
+      <span
+        class="dot"
+        :class="{ on: !!claudeColor }"
+        :style="claudeColor ? { background: claudeColor, color: claudeColor } : undefined"
+      />
+      <span class="compact-time mono" data-tauri-drag-region>{{ time }}</span>
+      <span v-if="focusActive" class="compact-focus mono">{{ focus.label.value }}</span>
+      <span v-else class="compact-spacer" />
+    </div>
+
+    <!-- Genişletilmiş görünüm -->
+    <div v-else class="expanded-view">
+      <header class="header" data-tauri-drag-region>
+        <span class="mono" data-tauri-drag-region>{{ date }}</span>
+        <span class="brand" data-tauri-drag-region>Halisland</span>
+        <span class="mono" data-tauri-drag-region>{{ time }}</span>
+      </header>
+
+      <div class="tiles">
+        <Tile title="Müzik" dim>
+          <div class="big">—</div>
+          <div class="sub">Yakında</div>
+        </Tile>
+
+        <Tile title="Odak" :glow="focusColor" :pulse="focus.state.value === 'finished'">
+          <button class="big mono" @click="focus.toggle()">{{ focus.label.value }}</button>
+          <div class="row">
+            <button class="chip" @click="focus.toggle()">
+              {{ focus.state.value === "running" ? "Duraklat" : "Başlat" }}
+            </button>
+            <button v-if="focusActive" class="chip" @click="focus.reset()">Sıfırla</button>
+          </div>
+          <div class="bar"><div class="fill" :style="{ width: `${focus.progress.value * 100}%` }" /></div>
+        </Tile>
+
+        <Tile
+          title="Claude"
+          :glow="claudeColor"
+          :pulse="claude.state.value === 'working' || claude.state.value === 'waiting'"
+        >
+          <div class="big">{{ claude.label.value }}</div>
+          <div class="sub mono">
+            {{ claude.state.value === "idle" ? "Claude Code bekleniyor" : claude.elapsed.value }}
+          </div>
+        </Tile>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.island {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--island-bg);
+  border: 1px solid var(--island-border);
+  transition:
+    width 0.38s var(--ease),
+    height 0.38s var(--ease),
+    border-radius 0.38s var(--ease);
+}
+
+.island.expanded {
+  border-radius: 28px;
+}
+
+/* ---------- Kompakt ---------- */
+.compact {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 16px;
+  cursor: grab;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 0.4s ease;
+}
+
+.dot.on {
+  box-shadow: 0 0 8px currentColor;
+}
+
+.compact-time {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.compact-focus {
+  justify-self: end;
+  font-size: 12px;
+  color: var(--c-focus);
+}
+
+/* ---------- Genişletilmiş ---------- */
+.expanded-view {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  animation: fade-in 0.25s ease 0.1s both;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: grab;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.tiles {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  min-height: 0;
+}
+
+.big {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chip:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.bar {
+  margin-top: 8px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  background: var(--c-focus);
+  transition: width 0.25s linear;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+</style>
