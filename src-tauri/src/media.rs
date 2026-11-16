@@ -77,6 +77,7 @@ mod platform {
     use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
 
     const POLL: Duration = Duration::from_millis(1000);
+    const ARTWORK_TRIES: u8 = 3;
     /// TimeSpan 100 ns biriminde.
     const TICKS_PER_MS: i64 = 10_000;
 
@@ -143,7 +144,8 @@ mod platform {
                 let _ = RoInitialize(RO_INIT_MULTITHREADED);
             }
             let mut last = MediaState::default();
-            let mut last_artwork_key = String::new();
+            let mut artwork_key = String::new();
+            let mut artwork_tries = 0u8;
 
             loop {
                 let session = current_session();
@@ -156,19 +158,22 @@ mod platform {
                     let _ = app.emit("media-update", &state);
                 }
 
-                if state.active && state.track_key != last_artwork_key {
-                    if let Some(s) = &session {
-                        let data_url = read_artwork(s).unwrap_or_default();
-                        // Bazı uygulamalar kapağı şarkıdan biraz sonra yayınlar;
-                        // boş geldiyse bir sonraki turda tekrar dene.
-                        if !data_url.is_empty() {
-                            last_artwork_key = state.track_key.clone();
-                        }
-                        let _ = app.emit(
-                            "media-artwork",
-                            MediaArtwork { track_key: state.track_key.clone(), data_url },
-                        );
+                // Bazı uygulamalar kapağı şarkıdan biraz sonra yayınlar;
+                // boş gelirse birkaç tur daha dener, sonra vazgeçer.
+                if state.active
+                    && state.track_key != artwork_key
+                    && let Some(s) = &session
+                {
+                    let data_url = read_artwork(s).unwrap_or_default();
+                    artwork_tries += 1;
+                    if !data_url.is_empty() || artwork_tries >= ARTWORK_TRIES {
+                        artwork_key = state.track_key.clone();
+                        artwork_tries = 0;
                     }
+                    let _ = app.emit(
+                        "media-artwork",
+                        MediaArtwork { track_key: state.track_key.clone(), data_url },
+                    );
                 }
 
                 last = state;
