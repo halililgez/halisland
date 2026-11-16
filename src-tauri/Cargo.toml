@@ -19,6 +19,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tiny_http = "0.12"
 
+[target.'cfg(windows)'.dependencies]
+base64 = "0.22"
+windows = { version = "0.62", features = [
+  "Foundation",
+  "Media_Control",
+  "Storage_Streams",
+  "Win32_System_WinRT",
+] }
+
 [profile.release]
 codegen-units = 1
 lto = true

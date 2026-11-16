@@ -2,14 +2,14 @@
 
 Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında duran, üzerine gelince açılan cam görünümlü bir ada: saat, odak sayacı, Claude Code durumu ve (yakında) çalan müzik.
 
-> Durum: erken geliştirme (Faz 0, iskelet).
+> Durum: erken geliştirme. Fazlar için `docs/ILERLEME.md`.
 
 ## Özellikler
 
 - **Ada:** Şeffaf, her zaman üstte, görev çubuğunda görünmez. Üzerine gelince açılır, ayrılınca kapanır. Tutup sürükleyebilirsin.
 - **Odak sayacı:** 25 dakikalık sayaç (başlat / duraklat / sıfırla). Çalışırken kompakt adada kalan süre görünür.
 - **Claude Code durumu:** Claude çalışırken kutucuk turuncu parlar, onay beklerken sarıya döner. İş bitince mavi olur, sen adaya bakınca yeşile döner ve söner.
-- **Müzik:** Sıradaki faz.
+- **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
 
 ## Geliştirme
 
@@ -69,9 +69,13 @@ src/
     useClock.ts            saat ve tarih
     useFocusTimer.ts       odak sayacı
     useClaudeStatus.ts     Claude Code durum makinesi
+    useMedia.ts            çalan müzik ve kontroller
+  components/MusicTile.vue müzik kutucuğu
+  utils/color.ts           kapaktan vurgu rengi
 src-tauri/src/
   lib.rs                   uygulama kurulumu
   island.rs                pencere konumu ve boyutu (resize_island komutu)
   claude.rs                Claude Code hook sunucusu (port 47821)
+  media.rs                 çalan müzik (Windows SMTC)
 docs/ILERLEME.md           fazlar ve geliştirme günlüğü
 ```

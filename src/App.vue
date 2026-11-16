@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import Tile from "./components/Tile.vue";
+import MusicTile from "./components/MusicTile.vue";
 import { useClock } from "./composables/useClock";
 import { useFocusTimer } from "./composables/useFocusTimer";
 import { useClaudeStatus, type ClaudeState } from "./composables/useClaudeStatus";
 import { COMPACT, EXPANDED, useIsland } from "./composables/useIsland";
+import { useMedia } from "./composables/useMedia";
 
 const { time, date } = useClock();
 const focus = useFocusTimer(25);
 const claude = useClaudeStatus();
 const island = useIsland(() => claude.markSeen());
+const media = useMedia();
 
 const CLAUDE_COLORS: Record<ClaudeState, string | undefined> = {
   idle: undefined,
@@ -29,27 +32,37 @@ const focusColor = computed(() =>
 
 const islandStyle = computed(() => {
   const size = island.expanded.value ? EXPANDED : COMPACT;
-  return { width: `${size.width}px`, height: `${size.height}px` };
+  return {
+    width: `${size.width}px`,
+    height: `${size.height}px`,
+    "--accent": media.accent.value ?? "transparent",
+  };
 });
 </script>
 
 <template>
   <div
     class="island"
-    :class="{ expanded: island.expanded.value }"
+    :class="{ expanded: island.expanded.value, tinted: !!media.accent.value }"
     :style="islandStyle"
     @mouseenter="island.hoverIn"
     @mouseleave="island.hoverOut"
   >
     <!-- Kompakt görünüm -->
     <div v-if="!island.expanded.value" class="compact" data-tauri-drag-region>
-      <span
-        class="dot"
-        :class="{ on: !!claudeColor }"
-        :style="claudeColor ? { background: claudeColor, color: claudeColor } : undefined"
-      />
+      <span class="left">
+        <span
+          class="dot"
+          :class="{ on: !!claudeColor }"
+          :style="claudeColor ? { background: claudeColor, color: claudeColor } : undefined"
+        />
+        <img v-if="media.state.value.active && media.artwork.value" class="mini-cover" :src="media.artwork.value" alt="" />
+      </span>
       <span class="compact-time mono" data-tauri-drag-region>{{ time }}</span>
       <span v-if="focusActive" class="compact-focus mono">{{ focus.label.value }}</span>
+      <span v-else-if="media.state.value.playing" class="eq" aria-hidden="true">
+        <i /><i /><i /><i />
+      </span>
       <span v-else class="compact-spacer" />
     </div>
 
@@ -62,9 +75,20 @@ const islandStyle = computed(() => {
       </header>
 
       <div class="tiles">
-        <Tile title="Müzik" dim>
-          <div class="big">—</div>
-          <div class="sub">Yakında</div>
+        <Tile
+          class="music-tile"
+          title="Müzik"
+          :glow="media.state.value.playing ? media.accent.value : undefined"
+          :dim="!media.state.value.active"
+        >
+          <MusicTile
+            :state="media.state.value"
+            :artwork="media.artwork.value"
+            :source="media.source.value"
+            :position="media.position.value"
+            :progress="media.progress.value"
+            @control="media.control"
+          />
         </Tile>
 
         <Tile title="Odak" :glow="focusColor" :pulse="focus.state.value === 'finished'">
@@ -114,6 +138,29 @@ const islandStyle = computed(() => {
   border-radius: 28px;
 }
 
+/* Çalan şarkının kapak rengi adaya hafifçe siner. */
+.island::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 140% at 0% 0%,
+    color-mix(in srgb, var(--accent) 28%, transparent),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+
+.island.tinted::before {
+  opacity: 1;
+}
+
+.island > * {
+  position: relative;
+}
+
 /* ---------- Kompakt ---------- */
 .compact {
   height: 100%;
@@ -122,6 +169,58 @@ const islandStyle = computed(() => {
   align-items: center;
   padding: 0 16px;
   cursor: grab;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-cover {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.eq {
+  justify-self: end;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.eq i {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent, var(--text));
+  animation: eq 0.9s ease-in-out infinite;
+}
+
+.island:not(.tinted) .eq i {
+  background: var(--text);
+}
+
+.eq i:nth-child(2) {
+  animation-delay: -0.3s;
+}
+.eq i:nth-child(3) {
+  animation-delay: -0.6s;
+}
+.eq i:nth-child(4) {
+  animation-delay: -0.15s;
+}
+
+@keyframes eq {
+  0%,
+  100% {
+    height: 30%;
+  }
+  50% {
+    height: 100%;
+  }
 }
 
 .dot {
@@ -171,6 +270,10 @@ const islandStyle = computed(() => {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--text);
+}
+
+.music-tile {
+  flex: 1.9;
 }
 
 .tiles {
