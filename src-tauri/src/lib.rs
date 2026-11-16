@@ -1,4 +1,5 @@
 mod claude;
+mod glass;
 mod island;
 mod media;
 
@@ -7,8 +8,11 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(glass::GlassState::default())
         .invoke_handler(tauri::generate_handler![
             island::resize_island,
+            glass::set_glass,
+            glass::set_island_shape,
             media::media_control
         ])
         .setup(|app| {

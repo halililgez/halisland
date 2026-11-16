@@ -34,6 +34,8 @@ pub fn resize_island(window: WebviewWindow, width: f64, height: f64) -> Result<(
 
         window.set_size(LogicalSize::new(width, height))?;
         window.set_position(PhysicalPosition::new(center_x - new_w / 2, pos.y))?;
+        // Cam açıksa pencere bölgesini yeni boyuta göre yeniden ortala.
+        crate::glass::apply_shape(&window);
         Ok(())
     };
     run().map_err(|e| e.to_string())

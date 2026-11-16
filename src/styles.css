@@ -22,6 +22,14 @@
   user-select: none;
 }
 
+/* Gerçek cam açıkken (Windows acrylic/blur) arkadaki bulanıklık görünsün diye
+   ada arka planı daha saydam olur. Bkz. src/composables/useGlass.ts */
+:root.glass {
+  --island-bg: rgba(16, 16, 20, 0.38);
+  --island-border: rgba(255, 255, 255, 0.12);
+  --tile-bg: rgba(255, 255, 255, 0.06);
+}
+
 /* Pencere tamamen şeffaf; görünen tek şey ada. */
 html,
 body,
