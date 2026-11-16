@@ -28,12 +28,15 @@ const EMPTY: MediaState = {
   trackKey: "",
 };
 
-/** "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" → "Spotify", "chrome.exe" → "chrome" */
+/**
+ * "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" → "Spotify", "chrome.exe" → "chrome",
+ * "Opera.1674602008" → "Opera" (sayısal son parça bir kimliktir, ad değil).
+ */
 export function sourceName(id: string): string {
   let name = id.includes("!") ? id.slice(id.lastIndexOf("!") + 1) : id;
   name = name.replace(/\.exe$/i, "");
-  if (name.includes(".")) name = name.slice(name.lastIndexOf(".") + 1);
-  return name;
+  const parts = name.split(".").filter((p) => p && !/^\d+$/.test(p));
+  return parts.length ? parts[parts.length - 1] : "";
 }
 
 export function formatMs(ms: number): string {

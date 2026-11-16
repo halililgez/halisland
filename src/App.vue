@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { useGlass, type GlassMode } from "./composables/useGlass";
 import Tile from "./components/Tile.vue";
 import MusicTile from "./components/MusicTile.vue";
 import { useClock } from "./composables/useClock";
@@ -13,6 +14,10 @@ const focus = useFocusTimer(25);
 const claude = useClaudeStatus();
 const island = useIsland(() => claude.markSeen());
 const media = useMedia();
+
+const islandEl = ref<HTMLElement | null>(null);
+const glassMode = ref<GlassMode>("acrylic");
+useGlass(islandEl, glassMode);
 
 const CLAUDE_COLORS: Record<ClaudeState, string | undefined> = {
   idle: undefined,
@@ -42,6 +47,7 @@ const islandStyle = computed(() => {
 
 <template>
   <div
+    ref="islandEl"
     class="island"
     :class="{ expanded: island.expanded.value, tinted: !!media.accent.value }"
     :style="islandStyle"
