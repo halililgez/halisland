@@ -9,6 +9,8 @@ import ClaudeTile from "./components/ClaudeTile.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import SystemPanel from "./components/SystemPanel.vue";
 import PowerPanel from "./components/PowerPanel.vue";
+import ClipboardPanel from "./components/ClipboardPanel.vue";
+import { useClipboard } from "./composables/useClipboard";
 import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
 import { useFocusTimer } from "./composables/useFocusTimer";
@@ -49,9 +51,10 @@ const focusColor = computed(() =>
 );
 
 /** Açık adanın sekmeleri. Ayarlar sekme değil, dişliyle açılan ayrı sayfa. */
-type Tab = "main" | "system" | "power";
+type Tab = "main" | "clipboard" | "system" | "power";
 const TABS: { id: Tab; label: string }[] = [
   { id: "main", label: "Ana" },
+  { id: "clipboard", label: "Pano" },
   { id: "system", label: "Sistem" },
   { id: "power", label: "Güç" },
 ];
@@ -75,6 +78,9 @@ watch(island.expanded, (open) => {
 const systemStats = useSystemStats(
   computed(() => island.expanded.value && isActive("system")),
 );
+
+/** Pano geçmişi; liste yalnızca sekme görünürken yenilenir. */
+const clip = useClipboard(computed(() => island.expanded.value && isActive("clipboard")));
 
 /** Sağ tık: ayarları adanın içinde açar. Dişli: ayarlar ↔ sekmeler. */
 async function openSettings() {
@@ -261,6 +267,17 @@ const islandStyle = computed(() => {
           />
         </Tile>
       </div>
+
+      <ClipboardPanel
+        class="page"
+        :inert="!isActive('clipboard')"
+        :items="clip.items.value"
+        :enabled="settings.clipboard"
+        @copy="clip.copy"
+        @remove="clip.remove"
+        @pin="clip.pin"
+        @clear="clip.clear"
+      />
 
       <SystemPanel class="page" :inert="!isActive('system')" :stats="systemStats" />
 

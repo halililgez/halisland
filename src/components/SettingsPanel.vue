@@ -81,6 +81,14 @@ function act(id: string) {
         <span>Claude Code'u bağla</span>
         <span class="switch" :class="{ on: claudeConnected }" />
       </button>
+      <button
+        class="switch-row"
+        title="Kapatınca geçmiş silinir"
+        @click="act('clipboard')"
+      >
+        <span>Pano geçmişi</span>
+        <span class="switch" :class="{ on: settings.clipboard }" />
+      </button>
       <button class="switch-row" @click="act('autostart')">
         <span>Oturum açılınca başlat</span>
         <span class="switch" :class="{ on: settings.autostart }" />

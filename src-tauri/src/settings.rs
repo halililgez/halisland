@@ -37,6 +37,8 @@ pub struct Settings {
     pub autostart: bool,
     /// Kilitliyken ada sürüklenemez.
     pub locked: bool,
+    /// Pano geçmişi tutulsun mu? Kapatılınca geçmiş silinir.
+    pub clipboard: bool,
     pub position: Option<SavedPosition>,
 }
 
@@ -48,6 +50,7 @@ impl Default for Settings {
             tint: true,
             autostart: false,
             locked: false,
+            clipboard: true,
             position: None,
         }
     }
@@ -212,6 +215,7 @@ mod tests {
         assert_eq!(s.glass, GlassMode::Acrylic);
         assert!(s.tint);
         assert!(!s.locked);
+        assert!(s.clipboard);
         assert_eq!(s.position, None);
     }
 

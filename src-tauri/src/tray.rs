@@ -27,6 +27,7 @@ pub struct TrayItems {
     autostart: CheckMenuItem<Wry>,
     claude: CheckMenuItem<Wry>,
     locked: CheckMenuItem<Wry>,
+    clipboard: CheckMenuItem<Wry>,
     toggle: MenuItem<Wry>,
 }
 
@@ -76,6 +77,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     )?;
     let locked =
         CheckMenuItem::with_id(app, "lock", "Konumu kilitle", true, s.locked, None::<&str>)?;
+    let clipboard = CheckMenuItem::with_id(
+        app,
+        "clipboard",
+        "Pano geçmişi",
+        true,
+        s.clipboard,
+        None::<&str>,
+    )?;
     let toggle = MenuItem::with_id(app, "toggle", "Adayı gizle", true, None::<&str>)?;
 
     let focus_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
@@ -104,6 +113,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             &tint,
             &PredefinedMenuItem::separator(app)?,
             &claude,
+            &clipboard,
             &autostart,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?,
@@ -126,6 +136,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         autostart,
         claude,
         locked,
+        clipboard,
         toggle,
     }))));
     Ok(())
@@ -143,6 +154,14 @@ fn handle(app: &AppHandle, id: &str) {
         "reset-position" => reset_position(app),
         "lock" => settings::update(app, |s| s.locked = !s.locked),
         "tint" => settings::update(app, |s| s.tint = !s.tint),
+        "clipboard" => {
+            let enable = !app.state::<settings::SettingsStore>().get().clipboard;
+            settings::update(app, |s| s.clipboard = enable);
+            // Kapatınca geçmiş bellekte de kalmasın.
+            if !enable {
+                crate::clipboard::forget_all(app);
+            }
+        }
         "claude-hooks" => {
             let enable = !crate::hooks::claude_hooks_installed(app.clone());
             let now = crate::hooks::set_installed(app, enable);
@@ -166,7 +185,7 @@ fn handle(app: &AppHandle, id: &str) {
 }
 
 /// Adanın ayar panelinden gelen işlem. Kimlikler tepsi menüsündekilerle
-/// aynıdır: `toggle`, `lock`, `reset-position`, `tint`, `claude-hooks`, `autostart`,
+/// aynıdır: `toggle`, `lock`, `reset-position`, `tint`, `clipboard`, `claude-hooks`, `autostart`,
 /// `quit`, `focus-<dakika>`, `glass-<mod>`.
 #[tauri::command]
 pub fn settings_action(app: AppHandle, id: String) {
@@ -206,4 +225,5 @@ pub fn sync(app: &AppHandle, s: &Settings) {
     let _ = items.tint.set_checked(s.tint);
     let _ = items.autostart.set_checked(s.autostart);
     let _ = items.locked.set_checked(s.locked);
+    let _ = items.clipboard.set_checked(s.clipboard);
 }
