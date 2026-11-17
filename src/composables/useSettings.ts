@@ -19,6 +19,10 @@ export interface Settings {
   weatherCity: WeatherCity | null;
   /** Adanın yapıştığı ekran kenarı. */
   edge: Edge;
+  /** Asistan açık mı? Varsayılan kapalı: yerel model güçlü bir ekran kartı ister. */
+  assistant: boolean;
+  /** Asistanın Ollama modeli; null: backend'in varsayılanı (qwen3:8b). */
+  assistantModel: string | null;
 }
 
 const DEFAULTS: Settings = {
@@ -30,6 +34,8 @@ const DEFAULTS: Settings = {
   clipboard: true,
   weatherCity: null,
   edge: "top",
+  assistant: false,
+  assistantModel: null,
 };
 
 /**

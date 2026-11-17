@@ -63,6 +63,11 @@ pub struct Settings {
     /// Adanın yapıştığı ekran kenarı.
     pub edge: Edge,
     pub position: Option<SavedPosition>,
+    /// Asistan (Windows). Varsayılan kapalı: yerel model güçlü bir ekran
+    /// kartı ister; kapalıyken backend hiç başlatılmaz.
+    pub assistant: bool,
+    /// Asistanın Ollama modeli; yoksa backend'in varsayılanı (qwen3:8b).
+    pub assistant_model: Option<String>,
 }
 
 impl Default for Settings {
@@ -77,6 +82,8 @@ impl Default for Settings {
             weather_city: None,
             edge: Edge::Top,
             position: None,
+            assistant: false,
+            assistant_model: None,
         }
     }
 }
@@ -256,6 +263,7 @@ mod tests {
         assert!(s.clipboard);
         assert_eq!(s.position, None);
         assert_eq!(s.edge, Edge::Top);
+        assert!(!s.assistant);
     }
 
     #[test]

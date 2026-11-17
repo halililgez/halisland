@@ -37,6 +37,8 @@ pub fn run() {
         .manage(assistant::AssistantState::default())
         .invoke_handler(tauri::generate_handler![
             assistant::assistant_info,
+            assistant::assistant_hardware,
+            assistant::set_assistant_model,
             claude::focus_claude,
             claude::claude_status,
             clipboard::clipboard_list,
@@ -107,8 +109,8 @@ pub fn run() {
             // Pano geçmişi (Windows).
             clipboard::start_watcher(handle.clone());
 
-            // Yerel asistan backend'i (Windows, .NET).
-            assistant::start(&handle);
+            // Yerel asistan backend'i (Windows, .NET); ayarlarda açıksa.
+            assistant::start_if_enabled(&handle);
 
             // Çalan müzik (Windows: SMTC).
             media::start_watcher(handle);

@@ -37,6 +37,8 @@ pub struct TrayItems {
     claude: CheckMenuItem<Wry>,
     locked: CheckMenuItem<Wry>,
     clipboard: CheckMenuItem<Wry>,
+    /// Yalnızca Windows'ta (asistan orada).
+    assistant: Option<CheckMenuItem<Wry>>,
     toggle: MenuItem<Wry>,
 }
 
@@ -102,6 +104,18 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         s.clipboard,
         None::<&str>,
     )?;
+    let assistant = if cfg!(windows) {
+        Some(CheckMenuItem::with_id(
+            app,
+            "assistant",
+            "Asistan",
+            true,
+            s.assistant,
+            None::<&str>,
+        )?)
+    } else {
+        None
+    };
     let toggle = MenuItem::with_id(app, "toggle", "Adayı gizle", true, None::<&str>)?;
 
     let focus_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
@@ -121,25 +135,22 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         &glass_refs,
     )?;
 
-    let menu = Menu::with_items(
-        app,
-        &[
-            &toggle,
-            &locked,
-            &edge_menu,
-            &MenuItem::with_id(app, "reset-position", "Konumu sıfırla", true, None::<&str>)?,
-            &PredefinedMenuItem::separator(app)?,
-            &focus_menu,
-            &glass_menu,
-            &tint,
-            &PredefinedMenuItem::separator(app)?,
-            &claude,
-            &clipboard,
-            &autostart,
-            &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?,
-        ],
-    )?;
+    let reset = MenuItem::with_id(app, "reset-position", "Konumu sıfırla", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
+    let (sep1, sep2, sep3) = (
+        PredefinedMenuItem::separator(app)?,
+        PredefinedMenuItem::separator(app)?,
+        PredefinedMenuItem::separator(app)?,
+    );
+    let mut entries: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = vec![
+        &toggle, &locked, &edge_menu, &reset, &sep1, &focus_menu, &glass_menu, &tint, &sep2,
+        &claude,
+    ];
+    if let Some(a) = &assistant {
+        entries.push(a);
+    }
+    entries.extend([&clipboard as &dyn tauri::menu::IsMenuItem<Wry>, &autostart, &sep3, &quit]);
+    let menu = Menu::with_items(app, &entries)?;
 
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip("Halisland")
@@ -159,6 +170,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         claude,
         locked,
         clipboard,
+        assistant,
         toggle,
     }))));
     Ok(())
@@ -182,6 +194,12 @@ fn handle(app: &AppHandle, id: &str) {
             // Kapatınca geçmiş bellekte de kalmasın.
             if !enable {
                 crate::clipboard::forget_all(app);
+            }
+        }
+        "assistant" => {
+            if cfg!(windows) {
+                settings::update(app, |s| s.assistant = !s.assistant);
+                crate::assistant::apply(app);
             }
         }
         "claude-hooks" => {
@@ -209,7 +227,7 @@ fn handle(app: &AppHandle, id: &str) {
 }
 
 /// Adanın ayar panelinden gelen işlem. Kimlikler tepsi menüsündekilerle
-/// aynıdır: `toggle`, `lock`, `reset-position`, `tint`, `clipboard`, `claude-hooks`, `autostart`,
+/// aynıdır: `toggle`, `lock`, `reset-position`, `tint`, `clipboard`, `claude-hooks`, `assistant`, `autostart`,
 /// `quit`, `focus-<dakika>`, `glass-<mod>`, `edge-<kenar>`.
 #[tauri::command]
 pub fn settings_action(app: AppHandle, id: String) {
@@ -253,6 +271,9 @@ pub fn sync(app: &AppHandle, s: &Settings) {
     let _ = items.autostart.set_checked(s.autostart);
     let _ = items.locked.set_checked(s.locked);
     let _ = items.clipboard.set_checked(s.clipboard);
+    if let Some(a) = &items.assistant {
+        let _ = a.set_checked(s.assistant);
+    }
 }
 
 /// Adayı başka bir kenara taşır: o kenarın ortasına konur. Kompakt hâldeyse

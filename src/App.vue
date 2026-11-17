@@ -62,21 +62,26 @@ const focusColor = computed(() =>
 type Tab = "main" | "assistant" | "today" | "controls" | "speed" | "clipboard" | "system" | "power";
 /** Asistan şimdilik yalnızca Windows'ta (backend orada başlatılıyor). */
 const HAS_ASSISTANT = navigator.userAgent.includes("Windows");
-const TABS: { id: Tab; label: string }[] = [
+/**
+ * Asistan isteğe bağlı (Faz 23): ayarlarda açılmadıkça sekmesi görünmez,
+ * backend de başlatılmaz. Her bilgisayar yerel modeli kaldıramaz.
+ */
+const assistantOn = computed(() => HAS_ASSISTANT && settings.value.assistant);
+const TABS = computed<{ id: Tab; label: string }[]>(() => [
   { id: "main", label: "Ana" },
-  ...(HAS_ASSISTANT ? [{ id: "assistant" as const, label: "Asistan" }] : []),
+  ...(assistantOn.value ? [{ id: "assistant" as const, label: "Asistan" }] : []),
   { id: "today", label: "Bugün" },
   { id: "controls", label: "Kontrol" },
   { id: "speed", label: "Hız" },
   { id: "clipboard", label: "Pano" },
   { id: "system", label: "Sistem" },
   { id: "power", label: "Güç" },
-];
+]);
 const tab = ref<Tab>("main");
 const settingsOpen = ref(false);
 /** Kayan şeritteki sıra: sekmeler, en sağda ayarlar. */
 const pageIndex = computed(() =>
-  settingsOpen.value ? TABS.length : TABS.findIndex((t) => t.id === tab.value),
+  settingsOpen.value ? TABS.value.length : TABS.value.findIndex((t) => t.id === tab.value),
 );
 const isActive = (t: Tab) => !settingsOpen.value && tab.value === t;
 
@@ -105,7 +110,11 @@ const speedLabel = computed(() => {
 
 /** Asistan burada tutulur: ada kapanınca sohbet ve süren cevap kaybolmasın. */
 const assistantActive = computed(() => island.expanded.value && isActive("assistant"));
-const assistant = useAssistant(assistantActive);
+const assistant = useAssistant(assistantActive, assistantOn);
+// Asistan kapatılınca sekmesi kaybolur; üstündeysek ana sekmeye dön.
+watch(assistantOn, (on) => {
+  if (!on && tab.value === "assistant") tab.value = "main";
+});
 // Sohbet 200 px'e sığmıyor: Asistan sekmesinde ada aşağı (altta yukarı) uzar.
 watch(
   () => isActive("assistant"),
@@ -315,7 +324,7 @@ const islandStyle = computed(() => {
       </div>
 
       <AssistantPanel
-        v-if="HAS_ASSISTANT"
+        v-if="assistantOn"
         class="page"
         :inert="!isActive('assistant')"
         :active="assistantActive"
@@ -366,6 +375,7 @@ const islandStyle = computed(() => {
         :inert="!settingsOpen"
         :settings="settings"
         :claude-connected="claude.connected.value"
+        :has-assistant="HAS_ASSISTANT"
       />
       </div>
       </div>
