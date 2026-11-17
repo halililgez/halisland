@@ -11,6 +11,8 @@ export interface Settings {
   autostart: boolean;
   /** Kilitliyken ada sürüklenemez. */
   locked: boolean;
+  /** Pano geçmişi tutulsun mu? */
+  clipboard: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -19,6 +21,7 @@ const DEFAULTS: Settings = {
   tint: true,
   autostart: false,
   locked: false,
+  clipboard: true,
 };
 
 /**

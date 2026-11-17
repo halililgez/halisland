@@ -17,7 +17,11 @@ defineProps<{
     :class="{ glowing: !!glow, pulse, dim }"
     :style="glow ? { '--glow': glow } : undefined"
   >
-    <div class="tile-title">{{ title }}</div>
+    <div class="tile-title">
+      <span>{{ title }}</span>
+      <!-- Başlık satırının sağına araçlar (ör. arama, filtre). -->
+      <slot name="head" />
+    </div>
     <div class="tile-body"><slot /></div>
   </div>
 </template>
@@ -59,6 +63,9 @@ defineProps<{
 }
 
 .tile-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;

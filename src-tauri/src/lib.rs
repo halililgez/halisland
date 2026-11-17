@@ -1,6 +1,7 @@
 #[cfg(windows)]
 mod backdrop;
 mod claude;
+mod clipboard;
 mod glass;
 mod hooks;
 mod island;
@@ -28,9 +29,15 @@ pub fn run() {
         .manage(glass::GlassState::default())
         .manage(claude::ClaudeStore::default())
         .manage(system::SystemMonitor::default())
+        .manage(clipboard::ClipStore::default())
         .invoke_handler(tauri::generate_handler![
             claude::focus_claude,
             claude::claude_status,
+            clipboard::clipboard_list,
+            clipboard::clipboard_copy,
+            clipboard::clipboard_delete,
+            clipboard::clipboard_pin,
+            clipboard::clipboard_clear,
             island::resize_island,
             island::cursor_over_island,
             glass::glass_supported,
@@ -77,6 +84,9 @@ pub fn run() {
 
             // Claude Code hook'larını dinleyen küçük yerel HTTP sunucusu.
             claude::start_server(handle.clone());
+
+            // Pano geçmişi (Windows).
+            clipboard::start_watcher(handle.clone());
 
             // Çalan müzik (Windows: SMTC).
             media::start_watcher(handle);
