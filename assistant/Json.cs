@@ -32,7 +32,15 @@ public sealed record StoredMessage(
     string Content,
     string? Thinking,
     string? Error,
-    double? Speed);
+    double? Speed,
+    StoredTool[]? Tools = null);
+
+/// <summary>
+/// Bir cevapta çalışan araç: adı, argümanları (JSON), modele dönen sonuç,
+/// arayüzdeki not. Sonraki turlarda bağlama gerçek araç çağrısı olarak geri
+/// konur; yoksa model eski "açıldı" cevaplarını araçsız sanıp taklit ediyor.
+/// </summary>
+public sealed record StoredTool(string Name, string Arguments, string Result, string Note, bool Ok);
 
 /// <summary>Sohbetler arası hatırlanan bilgi.</summary>
 public sealed record Memory(long Id, string Text, long Created);
@@ -125,6 +133,7 @@ public sealed record OllamaError([property: JsonPropertyName("error")] string? E
 [JsonSerializable(typeof(StreamEvent))]
 [JsonSerializable(typeof(ConversationInfo[]))]
 [JsonSerializable(typeof(StoredMessage[]))]
+[JsonSerializable(typeof(StoredTool[]))]
 [JsonSerializable(typeof(Memory[]))]
 [JsonSerializable(typeof(OllamaChatRequest))]
 [JsonSerializable(typeof(OllamaLoadRequest))]

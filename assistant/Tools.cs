@@ -14,7 +14,8 @@ public sealed record ToolResult(string ForModel, string ForUser, bool Ok = true)
 
 /// <summary>
 /// Modelin çağırabildiği araçlar (her sağlayıcı kendi biçimine çevirir).
-/// Faz 22: hafıza (hatirla). Faz 25: dosya arama/açma, uygulama açma, notlar.
+/// Faz 22: hafıza (hatirla). Faz 25: dosya arama/açma, uygulama açma, notlar,
+/// medya tuşları, Spotify'da arama, tarayıcıda adres/arama açma.
 /// Riskli olan (dosya açma) kullanıcıya sorulur; bkz. <see cref="Confirmations"/>.
 /// </summary>
 public sealed class ToolRegistry(Store store, Confirmations confirmations, DesktopTools desktop)
@@ -59,6 +60,27 @@ public sealed class ToolRegistry(Store store, Confirmations confirmations, Deskt
             {"type":"object","properties":{"ad":{"type":"string","description":"Uygulamanın adı"}},"required":["ad"]}
             """),
         Tool(
+            "medya",
+            "Klavyedeki medya ve ses tuşlarına basar; o an çalan oynatıcı (Spotify, YouTube, ...) tepki verir. " +
+            "Müziği durdurmak ya da sürdürmek için oynat_duraklat (aynı tuş), sonraki/önceki parça, ses açma/kısma, sessiz.",
+            """
+            {"type":"object","properties":{"islem":{"type":"string","enum":["oynat_duraklat","sonraki","onceki","ses_ac","ses_kis","sessiz"]},"adim":{"type":"integer","description":"Yalnızca ses_ac/ses_kis için; her adım yaklaşık %2, varsayılan 5"}},"required":["islem"]}
+            """),
+        Tool(
+            "spotify_ara",
+            "Spotify'ı verilen aramanın sonuçlarıyla açar (şarkı, sanatçı, albüm). Şarkıyı kendiliğinden çalmaz; " +
+            "kullanıcı sonuçlardan tıklar.",
+            """
+            {"type":"object","properties":{"sorgu":{"type":"string","description":"Ör. 'Hergele İyi Uykular'"}},"required":["sorgu"]}
+            """),
+        Tool(
+            "web_ac",
+            "Varsayılan tarayıcıda yeni sekmede bir web adresi ya da bir sitede arama açar. Ya adres ya da arama ver. " +
+            "Sayfanın içeriğini göremezsin.",
+            """
+            {"type":"object","properties":{"adres":{"type":"string","description":"Ör. 'github.com' ya da tam adres"},"arama":{"type":"string","description":"Aranacak metin"},"site":{"type":"string","enum":["google","youtube","vikipedi","github","harita"],"description":"Arama nerede yapılsın; varsayılan google"}}}
+            """),
+        Tool(
             "not_al",
             "Kullanıcının not dosyasına (Belgeler\\Halisland\\Notlar.md) tarihli bir not ekler. Kullanıcı 'not al', " +
             "'not et', 'şunu yaz', 'listeye ekle' dediğinde çağır.",
@@ -91,6 +113,9 @@ public sealed class ToolRegistry(Store store, Confirmations confirmations, Deskt
                 "dosya_ara" => desktop.SearchFiles(GetString(args, "ad"), GetString(args, "tur"), GetString(args, "yer"), ct),
                 "dosya_ac" => await OpenFileAsync(GetString(args, "yol"), write, ct),
                 "uygulama_ac" => await desktop.OpenAppAsync(GetString(args, "ad"), ct),
+                "medya" => desktop.Media(GetString(args, "islem"), GetString(args, "adim")),
+                "spotify_ara" => desktop.SpotifySearch(GetString(args, "sorgu")),
+                "web_ac" => desktop.OpenWeb(GetString(args, "adres"), GetString(args, "arama"), GetString(args, "site")),
                 "not_al" => desktop.AddNote(GetString(args, "metin")),
                 "notlari_oku" => desktop.ReadNotes(),
                 _ => ToolResult.Fail($"Böyle bir araç yok: {call.Name}", $"Bilinmeyen araç: {call.Name}"),

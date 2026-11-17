@@ -297,6 +297,125 @@ public sealed class DesktopTools(ILogger<DesktopTools> log)
         return words.Length > 0 && words.All(w => Contains(name, w)) ? 1 : 0;
     }
 
+    // ---------- Medya ve ses ----------
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte vk, byte scan, uint flags, nuint extra);
+
+    private const uint KeyExtended = 0x1, KeyUp = 0x2;
+
+    /// <summary>
+    /// Klavyedeki medya ve ses tuşlarına basılmış gibi yapar; o an çalan
+    /// oynatıcı (Spotify, tarayıcı, ...) hangisiyse o tepki verir.
+    /// </summary>
+    public ToolResult Media(string? action, string? steps)
+    {
+        var n = int.TryParse(steps, out var s) ? Math.Clamp(s, 1, 25) : 5;
+        (byte Vk, int Times, string Done)? key = action?.Trim().ToLowerInvariant() switch
+        {
+            "oynat_duraklat" => (0xB3, 1, "Oynat/duraklat tuşuna basıldı"),
+            "sonraki" => (0xB0, 1, "Sonraki parçaya geçildi"),
+            "onceki" => (0xB1, 1, "Önceki parçaya geçildi"),
+            "ses_ac" => (0xAF, n, $"Ses yaklaşık {n * 2} puan açıldı"),
+            "ses_kis" => (0xAE, n, $"Ses yaklaşık {n * 2} puan kısıldı"),
+            "sessiz" => (0xAD, 1, "Sessiz tuşuna basıldı"),
+            _ => null,
+        };
+        if (key is not { } k)
+            return ToolResult.Fail($"Bilinmeyen işlem: {action}", "Bilinmeyen medya işlemi");
+
+        for (var i = 0; i < k.Times; i++)
+        {
+            keybd_event(k.Vk, 0, KeyExtended, 0);
+            keybd_event(k.Vk, 0, KeyExtended | KeyUp, 0);
+        }
+        log.LogInformation("medya {Action} x{Times}", action, k.Times);
+        var note = action switch
+        {
+            "oynat_duraklat" => " Aynı tuş çalıyorsa duraklatır, duraklatılmışsa sürdürür. Kullanıcıya kısaca " +
+                                "\"Oynat/duraklat tuşuna bastım\" de; çalıp çalmadığını bilemezsin, tahmin etme.",
+            "sessiz" => " Aynı tuş sesi kapatır ya da geri açar.",
+            "ses_ac" or "ses_kis" => " Şu anki ses seviyesini bilemezsin; seviye söyleme, tahmin etme.",
+            _ => "",
+        };
+        var forUser = action switch { "ses_ac" => "Ses açıldı", "ses_kis" => "Ses kısıldı", _ => k.Done };
+        return new ToolResult(k.Done + "." + note, forUser);
+    }
+
+    // ---------- Spotify ve web ----------
+
+    /// <summary>Spotify masaüstü uygulaması kurulu mu (spotify: adresleri ona gider).</summary>
+    private static bool HasSpotifyProtocol()
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        // Store sürümünde shell\open\command yok; "URL Protocol" değeri her iki sürümde de var.
+        using var key = Microsoft.Win32.Registry.ClassesRoot.OpenSubKey("spotify");
+        return key?.GetValue("URL Protocol") is not null;
+    }
+
+    public ToolResult SpotifySearch(string? query)
+    {
+        var q = string.Join(' ', (query ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (q.Length == 0) return ToolResult.Fail("Aranacak bir şey verilmedi.", "Arama boş");
+        if (q.Length > 200) q = q[..200];
+
+        var escaped = Uri.EscapeDataString(q);
+        var app = HasSpotifyProtocol();
+        var target = app ? $"spotify:search:{escaped}" : $"https://open.spotify.com/search/{escaped}";
+        Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
+        log.LogInformation("spotify_ara '{Query}' ({Where})", q, app ? "uygulama" : "web");
+        return new ToolResult(
+            $"Spotify{(app ? "" : " web sitesi tarayıcıda")} '{q}' aramasının sonuçlarıyla açıldı. Şarkıyı kendiliğinden " +
+            "çalmaz; kullanıcıya (sen diye) sonuçlardan istediğine tıklamasını söyle.",
+            $"Spotify'da arandı: {q}");
+    }
+
+    private static readonly Dictionary<string, string> SearchSites = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["google"] = "https://www.google.com/search?q=",
+        ["youtube"] = "https://www.youtube.com/results?search_query=",
+        ["vikipedi"] = "https://tr.wikipedia.org/w/index.php?search=",
+        ["github"] = "https://github.com/search?q=",
+        ["harita"] = "https://www.google.com/maps/search/",
+    };
+
+    /// <summary>Varsayılan tarayıcıda bir adresi ya da bir sitede aramayı açar. Yalnızca http/https.</summary>
+    public ToolResult OpenWeb(string? address, string? query, string? site)
+    {
+        string url;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var q = query.Trim();
+            if (q.Length > 300) q = q[..300];
+            var prefix = SearchSites.GetValueOrDefault(site?.Trim() ?? "", SearchSites["google"]);
+            url = prefix + Uri.EscapeDataString(q);
+        }
+        else
+        {
+            var a = address?.Trim() ?? "";
+            if (a.Length == 0) return ToolResult.Fail("Adres ya da arama verilmedi.", "Adres yok");
+            if (!a.Contains("://", StringComparison.Ordinal)) a = "https://" + a;
+            if (!Uri.TryCreate(a, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") ||
+                !uri.Host.Contains('.'))
+                return ToolResult.Fail($"Geçerli bir web adresi değil: {address}", "Geçersiz adres");
+            url = uri.AbsoluteUri;
+        }
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+        log.LogInformation("web_ac {Url}", url);
+        return new ToolResult(
+            $"Varsayılan tarayıcıda yeni sekmede açıldı: {url} (sayfanın içeriğini göremezsin).",
+            $"Tarayıcıda açıldı: {ShortUrl(url)}");
+    }
+
+    private static string ShortUrl(string url)
+    {
+        var u = new Uri(url);
+        var s = u.Host.StartsWith("www.", StringComparison.Ordinal) ? u.Host[4..] : u.Host;
+        var rest = Uri.UnescapeDataString(u.PathAndQuery);
+        if (rest is not "/") s += rest;
+        return s.Length > 60 ? s[..60] + "…" : s;
+    }
+
     // ---------- Notlar ----------
 
     /// <summary>BelgelerHalislandNotlar.md (denemede HALISLAND_NOTES_FILE ile değişir).</summary>

@@ -173,6 +173,7 @@ interface StoredMessage {
   thinking: string | null;
   error: string | null;
   speed: number | null;
+  tools?: { note: string; ok: boolean }[] | null;
 }
 
 const THINK_KEY = "halisland.assistant.think";
@@ -548,6 +549,7 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
         thinking: m.thinking ?? undefined,
         error: m.error ?? undefined,
         speed: m.speed ?? undefined,
+        tools: m.tools?.length ? m.tools.map((t) => ({ text: t.note, ok: t.ok })) : undefined,
       }));
   }
 
