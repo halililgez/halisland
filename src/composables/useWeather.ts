@@ -1,10 +1,21 @@
 import { ref, watch, type Ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 
 /** Rust'taki `WeatherCity` ile aynı (src-tauri/src/settings.rs). */
 export interface WeatherCity {
   name: string;
   latitude: number;
   longitude: number;
+  /** Cihaz konumundan mı? Öyleyse her yenilemede konum da tazelenir. */
+  device?: boolean;
+}
+
+/** Cihaz konumunu kullanırken gösterilen ad. */
+export const DEVICE_NAME = "Konumum";
+
+/** Windows konum servisinden (yaklaşık 1 km'ye yuvarlanmış) konum. */
+export function deviceLocation() {
+  return invoke<{ latitude: number; longitude: number }>("device_location");
 }
 
 export type WeatherIcon = "sun" | "moon" | "partly" | "cloud" | "fog" | "rain" | "snow" | "storm";
@@ -33,13 +44,27 @@ export function useWeather(city: Ref<WeatherCity | null>, active: Ref<boolean>) 
   let key = "";
 
   async function load() {
-    const c = city.value;
+    let c = city.value;
     if (!c) {
       weather.value = null;
       return;
     }
     loading.value = true;
     error.value = "";
+    // Cihaz konumu: önce konumu tazele. Alınamazsa son bilinen konumla devam.
+    if (c.device) {
+      try {
+        const p = await deviceLocation();
+        if (p.latitude !== c.latitude || p.longitude !== c.longitude) {
+          c = { ...c, latitude: p.latitude, longitude: p.longitude };
+          // Kaydedilen konum değişince izleyici yeniden yüklemesin.
+          key = cityKey(c);
+          invoke("set_weather_city", { city: c }).catch((e) => console.error("set_weather_city", e));
+        }
+      } catch (e) {
+        console.warn("device_location", e);
+      }
+    }
     try {
       const url =
         "https://api.open-meteo.com/v1/forecast" +
@@ -76,6 +101,8 @@ export function useWeather(city: Ref<WeatherCity | null>, active: Ref<boolean>) 
         key = "";
         return;
       }
+      // Konum tazelenirken kaydedilen yeni koordinat için ikinci istek atma.
+      if (loading.value && key === cityKey(c)) return;
       const old = !weather.value || Date.now() - weather.value.fetchedAt > STALE_MS;
       if (old || key !== cityKey(c)) load();
     },

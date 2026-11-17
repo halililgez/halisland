@@ -12,7 +12,7 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 - **Claude Code:** Claude çalışırken kutucuk turuncu parlar, onay beklerken sarıya döner. İş bitince mavi olur, sen adaya bakınca yeşile döner ve söner. Açık adada proje adı, son istemin, şu an ne yaptığı (komut çalıştırıyor, dosya düzenliyor...), neden beklediği ve değişen dosyalar görünür. **Terminale dön** düğmesi Claude'un çalıştığı pencereyi (Windows Terminal, VS Code, Claude masaüstü...) öne getirir.
 - **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
 - **Sekmeler:** Açık adanın üstündeki şeritten **Ana**, **Bugün**, **Pano**, **Sistem** ve **Güç** arasında geçilir. Ada kapanınca bir sonraki açılış Ana sekmeyle başlar.
-- **Bugün:** Tarih ve bu haftanın günleri; seçtiğin şehrin hava durumu (anlık sıcaklık, durum, en yüksek/en düşük; Open-Meteo, anahtar gerekmez, otomatik konum kullanılmaz); halkalı odak sayacı ve 15/25/45/60 dakika seçici; günün yapılacakları (tamamlananlar ertesi gün kendiliğinden temizlenir).
+- **Bugün:** Tarih ve bu haftanın günleri; hava durumu (anlık sıcaklık, durum, en yüksek/en düşük; Open-Meteo, anahtar gerekmez). Konum için **Konumumu kullan** (Windows konum servisi; yaklaşık 1 km'ye yuvarlanır, hava her yenilendiğinde konum da tazelenir) ya da şehir araması; halkalı odak sayacı ve 15/25/45/60 dakika seçici; günün yapılacakları (tamamlananlar ertesi gün kendiliğinden temizlenir).
 - **Pano geçmişi (Windows):** Kopyaladığın metinler, bağlantılar ve görseller Pano sekmesinde birikir. Arama ve Metin / Bağlantı / Görsel filtreleri var. Satıra tıklayınca yeniden panoya kopyalanır. Öğeleri sabitleyebilir, silebilir ya da hepsini temizleyebilirsin. Geçmiş yalnızca bellekte tutulur, diske yazılmaz; uygulama kapanınca gider. Parola yöneticilerinin "izleme" dışı bıraktığı kopyalamalar alınmaz. Ayarlardan "Pano geçmişi" kapatılınca geçmiş silinir.
 - **Sistem:** İşlemci ve bellek halkaları, en çok bellek kullanan dört uygulama (aynı uygulamanın süreçleri tek satırda toplanır), sistem diskinin doluluğu, anlık indirme/yükleme hızı ve bilgisayarın açık kalma süresi. Ölçüm yalnızca sekme açıkken, iki saniyede bir yapılır.
 - **Güç:** Kilitle, uyku, oturumu kapat, yeniden başlat, kapat. Son üçü geri alınamadığı için önce sayfanın üstünde bir onay şeridi açar ("Bilgisayar kapatılsın mı?" [Vazgeç] [Kapat]); Esc ya da sekmeden çıkmak iptal eder.
@@ -119,6 +119,7 @@ src-tauri/src/
   terminal.rs              Claude'un çalıştığı pencereyi bulma ve öne getirme
   media.rs                 çalan müzik (Windows SMTC)
   clipboard.rs             pano geçmişi (bellekte; Windows izleyicisi)
+  location.rs              cihaz konumu (Windows konum servisi, ~1 km)
   system.rs                işlemci, bellek, uygulamalar, disk, ağ (sysinfo)
   power.rs                 kilitle, uyku, oturumu kapat, yeniden başlat, kapat
 docs/ILERLEME.md           fazlar ve geliştirme günlüğü

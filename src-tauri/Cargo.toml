@@ -30,6 +30,8 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 [target.'cfg(windows)'.dependencies]
 windows-numerics = "0.3"
 windows = { version = "0.62", features = [
+  "Devices",
+  "Devices_Geolocation",
   "Foundation",
   "Foundation_Numerics",
   "Media_Control",

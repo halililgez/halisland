@@ -8,7 +8,9 @@ import { invoke } from "@tauri-apps/api/core";
 import Tile from "./Tile.vue";
 import WeatherGlyph from "./WeatherGlyph.vue";
 import {
+  DEVICE_NAME,
   describe,
+  deviceLocation,
   searchCity,
   useWeather,
   type CityResult,
@@ -91,6 +93,21 @@ watch(query, (q) => {
   }, 350);
 });
 
+/** Windows konum servisinden konumu al ve hava durumunu ona bağla. */
+const locating = ref(false);
+async function useDevice() {
+  locating.value = true;
+  searchError.value = "";
+  try {
+    const p = await deviceLocation();
+    pick({ name: DEVICE_NAME, latitude: p.latitude, longitude: p.longitude, device: true });
+  } catch (e) {
+    searchError.value = String(e);
+  } finally {
+    locating.value = false;
+  }
+}
+
 function pick(city: WeatherCity | null) {
   invoke("set_weather_city", { city }).catch((e) => console.error("set_weather_city", e));
   editing.value = false;
@@ -160,7 +177,7 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
 
         <button v-if="!city" class="weather add" @click="startEdit">
           <WeatherGlyph icon="partly" :size="14" />
-          <span>Hava durumu için şehir ekle</span>
+          <span>Hava durumu için konum ya da şehir seç</span>
         </button>
         <button v-else class="weather" :title="`${city.name} · değiştirmek için tıkla`" @click="startEdit">
           <span v-if="weather && desc" class="w-line">
@@ -190,6 +207,22 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
           <button class="mini-chip" @click="editing = false">Vazgeç</button>
         </div>
         <ul class="results">
+          <li v-if="!query.trim()">
+            <button class="locate" :disabled="locating" @click="useDevice">
+              <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+                <path
+                  d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linejoin="round"
+                />
+                <circle cx="12" cy="10" r="2.2" fill="currentColor" />
+              </svg>
+              {{ locating ? "Konum alınıyor…" : "Konumumu kullan" }}
+              <small v-if="city?.device">(şu an açık)</small>
+            </button>
+          </li>
           <li v-for="r in results" :key="`${r.city.latitude},${r.city.longitude}`">
             <button :title="r.label" @click="pick(r.city)">{{ r.label }}</button>
           </li>
@@ -480,6 +513,31 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
 
 .results li.dim {
   padding: 2px 6px;
+  /* İzin hatası iki satıra sığsın. */
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.locate {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--c-done);
+}
+
+.locate small {
+  color: var(--text-dim);
+}
+
+.locate:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* ---------- Odak ---------- */

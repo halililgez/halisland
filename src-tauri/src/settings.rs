@@ -35,6 +35,10 @@ pub struct WeatherCity {
     pub name: String,
     pub latitude: f64,
     pub longitude: f64,
+    /// Cihaz konumundan mı? Öyleyse hava durumu her yenilendiğinde konum da
+    /// yeniden alınır (dizüstü yer değiştirebilir).
+    #[serde(default)]
+    pub device: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -256,6 +260,7 @@ mod tests {
                 name: "Bozuk".into(),
                 latitude: 300.0,
                 longitude: 0.0,
+                device: false,
             }),
             ..Default::default()
         });
