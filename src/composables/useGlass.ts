@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref, watch, type Ref } from "vue";
+import { onBeforeUnmount, ref, watch, type Ref, type WatchSource } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 export type GlassMode = "acrylic" | "blur" | "off";
@@ -11,7 +11,7 @@ export type GlassMode = "acrylic" | "blur" | "off";
  * Cam açılamazsa (macOS, eski Windows, tarayıcı) `active` false kalır ve
  * ada CSS'teki yarı saydam koyu arka planla görünür.
  */
-export function useGlass(el: Ref<HTMLElement | null>, mode: Ref<GlassMode>) {
+export function useGlass(el: Ref<HTMLElement | null>, mode: WatchSource<GlassMode>) {
   const active = ref(false);
   let frame: number | undefined;
   let last = "";

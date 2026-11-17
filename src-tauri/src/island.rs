@@ -19,6 +19,22 @@ pub fn place_top_center(window: &WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Fare imleci adanın penceresinin üstünde mi? WebView odakta olmayan
+/// pencerede `:hover` bilgisini güvenilir tutmadığı için gerçek imleç
+/// konumuna bakarız. Hata olursa `true` (adayı yanlışlıkla kapatmayalım).
+#[tauri::command]
+pub fn cursor_over_island(window: WebviewWindow) -> bool {
+    let (Ok(c), Ok(p), Ok(s)) = (
+        window.cursor_position(),
+        window.outer_position(),
+        window.outer_size(),
+    ) else {
+        return true;
+    };
+    let (x0, y0) = (p.x as f64, p.y as f64);
+    c.x >= x0 && c.x < x0 + s.width as f64 && c.y >= y0 && c.y < y0 + s.height as f64
+}
+
 /// Ada büyüyüp küçülürken pencereyi yeniden boyutlandırır.
 /// Yatay merkez ve üst kenar sabit kalır; böylece kullanıcı adayı
 /// sürüklediyse yeni konumu korunur.

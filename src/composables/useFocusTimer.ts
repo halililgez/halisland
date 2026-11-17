@@ -1,11 +1,23 @@
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, toValue, watch, type MaybeRefOrGetter } from "vue";
 
 export type FocusState = "idle" | "running" | "paused" | "finished";
 
-export function useFocusTimer(defaultMinutes = 25) {
-  const durationMs = ref(defaultMinutes * 60_000);
+/**
+ * Odak sayacı. Süre ayarlardan değişirse sayaç boştaysa hemen, çalışıyorsa
+ * bir sonraki sıfırlamada uygulanır.
+ */
+export function useFocusTimer(minutes: MaybeRefOrGetter<number> = 25) {
+  const durationMs = ref(toValue(minutes) * 60_000);
   const remainingMs = ref(durationMs.value);
   const state = ref<FocusState>("idle");
+
+  watch(
+    () => toValue(minutes),
+    (m) => {
+      durationMs.value = m * 60_000;
+      if (state.value === "idle") remainingMs.value = durationMs.value;
+    },
+  );
 
   let endsAt = 0;
   let ticker: number | undefined;
@@ -56,7 +68,9 @@ export function useFocusTimer(defaultMinutes = 25) {
     return `${m}:${s}`;
   });
 
-  const progress = computed(() => 1 - remainingMs.value / durationMs.value);
+  const progress = computed(() =>
+    Math.min(1, Math.max(0, 1 - remainingMs.value / durationMs.value)),
+  );
 
   return { state, label, progress, start, pause, reset, toggle };
 }
