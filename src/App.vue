@@ -12,6 +12,8 @@ import PowerPanel from "./components/PowerPanel.vue";
 import ClipboardPanel from "./components/ClipboardPanel.vue";
 import TodayPanel from "./components/TodayPanel.vue";
 import ControlsPanel from "./components/ControlsPanel.vue";
+import SpeedPanel from "./components/SpeedPanel.vue";
+import { useSpeedTest } from "./composables/useSpeedTest";
 import { useClipboard } from "./composables/useClipboard";
 import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
@@ -55,11 +57,12 @@ const focusColor = computed(() =>
 );
 
 /** Açık adanın sekmeleri. Ayarlar sekme değil, dişliyle açılan ayrı sayfa. */
-type Tab = "main" | "today" | "controls" | "clipboard" | "system" | "power";
+type Tab = "main" | "today" | "controls" | "speed" | "clipboard" | "system" | "power";
 const TABS: { id: Tab; label: string }[] = [
   { id: "main", label: "Ana" },
   { id: "today", label: "Bugün" },
   { id: "controls", label: "Kontrol" },
+  { id: "speed", label: "Hız" },
   { id: "clipboard", label: "Pano" },
   { id: "system", label: "Sistem" },
   { id: "power", label: "Güç" },
@@ -84,6 +87,16 @@ watch(island.expanded, (open) => {
 const systemStats = useSystemStats(
   computed(() => island.expanded.value && isActive("system")),
 );
+
+/** Hız testi burada tutulur: ada kapanınca (sayfalar kaldırılınca) yarıda kalmasın. */
+const speed = useSpeedTest();
+/** Kompakt adada test sürerken canlı değer. */
+const speedLabel = computed(() => {
+  const p = speed.phase.value;
+  const v = speed.live.value;
+  if (p === "latency") return `${Math.round(v)} ms`;
+  return `${p === "upload" ? "↑" : "↓"}${v >= 100 ? Math.round(v) : v.toFixed(1)}`;
+});
 
 /** Pano geçmişi; liste yalnızca sekme görünürken yenilenir. */
 const clip = useClipboard(computed(() => island.expanded.value && isActive("clipboard")));
@@ -145,7 +158,8 @@ const islandStyle = computed(() => {
         <span v-bind="drag">{{ time.split(":")[1] }}</span>
       </span>
       <span v-else class="compact-time mono" v-bind="drag">{{ time }}</span>
-      <span v-if="focusActive" class="compact-focus mono">{{ focus.label.value }}</span>
+      <span v-if="speed.running.value" class="compact-focus compact-speed mono">{{ speedLabel }}</span>
+      <span v-else-if="focusActive" class="compact-focus mono">{{ focus.label.value }}</span>
       <span v-else-if="media.state.value.playing" class="eq" aria-hidden="true">
         <i /><i /><i /><i />
       </span>
@@ -298,6 +312,8 @@ const islandStyle = computed(() => {
         :inert="!isActive('controls')"
         :active="island.expanded.value && isActive('controls')"
       />
+
+      <SpeedPanel class="page" :inert="!isActive('speed')" :speed="speed" :now="now" />
 
       <ClipboardPanel
         class="page"
@@ -487,6 +503,10 @@ const islandStyle = computed(() => {
   color: var(--c-focus);
 }
 
+.compact-speed {
+  color: var(--c-done);
+}
+
 /* Sağ ve sol kenarda dikey kompakt ada: üstte durum, ortada saat (saat ve
    dakika alt alta), altta odak sayacı ya da ekolayzır. */
 .island.vertical .compact {
@@ -526,7 +546,7 @@ const islandStyle = computed(() => {
 }
 
 .island.vertical .tabs {
-  --tab-w: 52px;
+  --tab-w: 46px;
 }
 
 .island.vertical .track > .page {
