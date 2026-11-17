@@ -1,6 +1,6 @@
 [package]
 name = "halisland"
-version = "0.2.0"
+version = "0.3.0"
 description = "Halisland - Dynamic Island for Windows & macOS"
 authors = ["Halil İlgez"]
 license = "MIT"
