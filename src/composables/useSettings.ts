@@ -9,6 +9,8 @@ export interface Settings {
   glass: GlassMode;
   tint: boolean;
   autostart: boolean;
+  /** Kilitliyken ada sürüklenemez. */
+  locked: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -16,6 +18,7 @@ const DEFAULTS: Settings = {
   glass: "acrylic",
   tint: true,
   autostart: false,
+  locked: false,
 };
 
 /**

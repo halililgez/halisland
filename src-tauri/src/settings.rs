@@ -35,6 +35,8 @@ pub struct Settings {
     /// Ada çalan şarkının kapak rengini alsın mı?
     pub tint: bool,
     pub autostart: bool,
+    /// Kilitliyken ada sürüklenemez.
+    pub locked: bool,
     pub position: Option<SavedPosition>,
 }
 
@@ -45,6 +47,7 @@ impl Default for Settings {
             glass: GlassMode::Acrylic,
             tint: true,
             autostart: false,
+            locked: false,
             position: None,
         }
     }
@@ -208,6 +211,7 @@ mod tests {
         assert_eq!(s.focus_minutes, 45);
         assert_eq!(s.glass, GlassMode::Acrylic);
         assert!(s.tint);
+        assert!(!s.locked);
         assert_eq!(s.position, None);
     }
 
