@@ -32,6 +32,8 @@ Halisland, Windows + macOS için masaüstü Dynamic Island uygulaması. Halil il
   cd src-tauri && cargo clippy --all-targets -- -D warnings
   ```
 - PR'daki GitHub Actions CI (Windows + macOS) yeşil olmadan merge etme.
+- `main` bir ruleset ile korunur: doğrudan push yok, PR + code owner onayı + iki CI kontrolü zorunlu. GitHub kişinin kendi PR'ını onaylamasına izin vermediği için admin (Halil) kuralı PR üzerinden atlayabilir. Halil'in kendi PR'larını CI yeşil olunca `gh pr merge <N> --squash --admin` ile merge et.
+- Dışarıdan gelen (fork) PR'ları Halil açıkça söylemeden onaylama, merge etme ve `--admin` ile atlama. İnceleme isterse yorum olarak yaz.
 - Windows'a özgü Rust kodu (`#[cfg(windows)]`, ör. `src-tauri/src/media.rs`) Linux bulut ortamında derlenemez. Bu kodun doğrulaması CI'da yapılır.
 
 ## İletişim
