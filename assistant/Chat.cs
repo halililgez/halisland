@@ -11,21 +11,20 @@ namespace Halisland.Assistant;
 /// </summary>
 public sealed class ChatService(
     Store store,
-    OllamaClient ollama,
+    IChatProvider provider,
     ToolRegistry tools,
-    AssistantOptions options,
     ILogger<ChatService> log)
 {
     /// <summary>Bir cevapta en fazla bu kadar araç turu (sonsuz döngüye karşı).</summary>
     private const int MaxToolRounds = 4;
 
     /// <summary>Özetlenmemiş mesajlar bağlamın yarısını geçince eski kısım özetlenir.</summary>
-    private int SummarizeAbove => options.NumCtx / 2;
+    private int SummarizeAbove => provider.ContextTokens / 2;
 
     /// <summary>Özetlerken son bu kadar mesaj olduğu gibi kalır.</summary>
     private const int KeepRecent = 6;
 
-    /// <summary>Aynı anda yalnızca bir özet işi (GPU tek).</summary>
+    /// <summary>Aynı anda yalnızca bir özet işi (yerel modelde GPU tek).</summary>
     private static readonly SemaphoreSlim SummaryLock = new(1, 1);
 
     /// <summary>Kabaca token tahmini; Türkçe metinde ~3 karakter bir token.</summary>
@@ -67,43 +66,38 @@ public sealed class ChatService(
         {
             for (var round = 0; round < MaxToolRounds; round++)
             {
-                var calls = new List<OllamaToolCall>();
+                var calls = new List<ToolCall>();
                 var roundContent = new StringBuilder();
-                await foreach (var chunk in ollama.ChatAsync(history, req.Think, ToolRegistry.Definitions, ct))
+                object? raw = null;
+                await foreach (var d in provider.StreamAsync(history, req.Think, ToolRegistry.Definitions, ct))
                 {
-                    if (chunk.Error is { } e)
-                    {
-                        error = e;
-                        await write(new StreamEvent("error", Message: e));
-                        return;
-                    }
-                    if (chunk.Message?.Thinking is { Length: > 0 } th)
+                    if (d.Thinking is { Length: > 0 } th)
                     {
                         thinking.Append(th);
                         await write(new StreamEvent("thinking", Text: th));
                     }
-                    if (chunk.Message?.Content is { Length: > 0 } c)
+                    if (d.Text is { Length: > 0 } c)
                     {
                         content.Append(c);
                         roundContent.Append(c);
                         await write(new StreamEvent("token", Text: c));
                     }
-                    if (chunk.Message?.ToolCalls is { Length: > 0 } tc) calls.AddRange(tc);
-                    if (chunk.Done && chunk is { EvalCount: > 0, EvalDuration: > 0 })
-                        speed = Math.Round(chunk.EvalCount.Value / (chunk.EvalDuration.Value / 1e9), 1);
+                    if (d.ToolCalls is { Length: > 0 } tc) calls.AddRange(tc);
+                    if (d.Speed is { } s) speed = s;
+                    if (d.Raw is not null) raw = d.Raw;
                 }
 
                 if (calls.Count == 0) break;
-                if (calls.Any(c => c.Function.Name == "hatirla")) remembered = true;
+                if (calls.Any(c => c.Name == "hatirla")) remembered = true;
 
                 // Araçları çalıştır, sonuçları modele geri ver ve cevabın devamını iste.
-                history.Add(new OllamaMessage("assistant", roundContent.ToString(), ToolCalls: [.. calls]));
+                history.Add(new ChatMessage("assistant", roundContent.ToString(), ToolCalls: [.. calls], Raw: raw));
                 foreach (var call in calls)
                 {
-                    var result = tools.Execute(call.Function);
-                    log.LogInformation("Araç {Name}: {Result}", call.Function.Name, result.ForModel);
+                    var result = tools.Execute(call);
+                    log.LogInformation("Araç {Name}: {Result}", call.Name, result.ForModel);
                     await write(new StreamEvent("tool", Text: result.ForUser));
-                    history.Add(new OllamaMessage("tool", result.ForModel, ToolName: call.Function.Name));
+                    history.Add(new ChatMessage("tool", result.ForModel, ToolCallId: call.Id, ToolName: call.Name));
                 }
                 // Turlar arasında ayraç: araçtan önce yazılanla sonrası yapışmasın.
                 if (content.Length > 0 && !char.IsWhiteSpace(content[^1])) content.Append('\n');
@@ -128,9 +122,9 @@ public sealed class ChatService(
         {
             // Kullanıcı durdurdu: yazılan kısım kaydedilir.
         }
-        catch (Exception e) when (e is OllamaException or HttpRequestException or JsonException)
+        catch (Exception e) when (e is ProviderException or HttpRequestException or JsonException)
         {
-            error = e is HttpRequestException ? "Ollama'ya ulaşılamadı. Çalıştığından emin ol." : e.Message;
+            error = e is HttpRequestException ? $"{provider.Label} sunucusuna ulaşılamadı." : e.Message;
             await write(new StreamEvent("error", Message: error));
         }
         finally
@@ -173,18 +167,18 @@ public sealed class ChatService(
     {
         try
         {
-            var raw = await ollama.CompleteAsync(
+            var raw = await provider.CompleteAsync(
             [
-                new OllamaMessage("system",
+                new ChatMessage("system",
                     "Kullanıcının mesajında saklanmasını istediği bilgiyi kısa, tek cümle ve üçüncü tekil kişiyle yaz " +
                     "(ör. 'Kullanıcının adı Halil.'). Saklanacak somut bir bilgi yoksa yalnızca YOK yaz. Başka bir şey yazma."),
-                new OllamaMessage("user", Clip(userText, 1000)),
+                new ChatMessage("user", Clip(userText, 1000)),
             ], ct);
             var line = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
             if (line is null || line.StartsWith("YOK", StringComparison.OrdinalIgnoreCase)) return null;
             return line.Trim('"', '\'', '“', '”');
         }
-        catch (Exception e) when (e is OllamaException or HttpRequestException or JsonException)
+        catch (Exception e) when (e is ProviderException or HttpRequestException or JsonException)
         {
             log.LogWarning("Hatırlanacak bilgi çıkarılamadı: {Message}", e.Message);
             return null;
@@ -192,24 +186,24 @@ public sealed class ChatService(
     }
 
     /// <summary>Modele gidecek mesajlar. Son eleman yeni kullanıcı mesajıdır.</summary>
-    private List<OllamaMessage> BuildContext(long convId)
+    private List<ChatMessage> BuildContext(long convId)
     {
         var memories = store.ListMemories();
         var (summary, upto) = store.GetSummary(convId);
-        var system = SystemPrompt(memories, summary);
+        var system = SystemPrompt(memories, summary, provider);
 
         // Cevaba yer kalsın: bağlamın dörtte biri cevap için ayrılır.
-        var budget = options.NumCtx * 3 / 4 - Estimate(system) - 600; // ~600: araç tanımları
-        var kept = new List<OllamaMessage>();
+        var budget = provider.ContextTokens * 3 / 4 - Estimate(system) - 600; // ~600: araç tanımları
+        var kept = new List<ChatMessage>();
         foreach (var m in store.GetMessages(convId).Where(m => m.Id > upto).Reverse())
         {
             if (m.Role is not ("user" or "assistant") || string.IsNullOrWhiteSpace(m.Content)) continue;
             budget -= Estimate(m.Content);
             if (budget < 0 && kept.Count > 0) break;
-            kept.Add(new OllamaMessage(m.Role, m.Content));
+            kept.Add(new ChatMessage(m.Role, m.Content));
         }
         kept.Reverse();
-        kept.Insert(0, new OllamaMessage("system", system));
+        kept.Insert(0, new ChatMessage("system", system));
         return kept;
     }
 
@@ -224,12 +218,12 @@ public sealed class ChatService(
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         try
         {
-            var raw = await ollama.CompleteAsync(
+            var raw = await provider.CompleteAsync(
             [
-                new OllamaMessage("system",
+                new ChatMessage("system",
                     "Verilen sohbete 2-5 kelimelik Türkçe bir başlık yaz. Yalnızca başlığı yaz; " +
                     "tırnak, nokta, emoji ya da 'Başlık:' gibi bir ön ek koyma."),
-                new OllamaMessage("user",
+                new ChatMessage("user",
                     $"Kullanıcı: {Clip(question, 600)}\nAsistan: {Clip(answer ?? "", 600)}"),
             ], timeout.Token);
             var title = CleanTitle(raw);
@@ -237,7 +231,7 @@ public sealed class ChatService(
             store.SetTitle(convId, title);
             return title;
         }
-        catch (Exception e) when (e is OllamaException or HttpRequestException or OperationCanceledException or JsonException)
+        catch (Exception e) when (e is ProviderException or HttpRequestException or OperationCanceledException or JsonException)
         {
             log.LogWarning("Başlık üretilemedi: {Message}", e.Message);
             return null;
@@ -275,11 +269,11 @@ public sealed class ChatService(
             foreach (var m in fold)
                 transcript.Append(m.Role == "user" ? "Kullanıcı: " : "Asistan: ").AppendLine(Clip(m.Content, 1500));
 
-            var next = await ollama.CompleteAsync(
+            var next = await provider.CompleteAsync(
             [
                 // Anlatı biçimindeki özeti model kullanmıyor (denemede 0/4); madde
                 // madde somut bilgi listesini kullanıyor (4/4).
-                new OllamaMessage("system", """
+                new ChatMessage("system", """
                     Aşağıdaki sohbetten, devamında gerekebilecek bilgileri Türkçe madde listesi olarak çıkar.
                     Biçim (boş kalan başlığı yazma):
                     Kullanıcının verdiği bilgiler:
@@ -290,11 +284,11 @@ public sealed class ChatService(
                     - (varsa)
                     Önceki özetteki bilgileri de koru. En fazla 15 madde. Yalnızca listeyi yaz.
                     """),
-                new OllamaMessage("user", transcript.ToString()),
+                new ChatMessage("user", transcript.ToString()),
             ], CancellationToken.None);
             if (next.Length > 0) store.SetSummary(convId, next, fold[^1].Id);
         }
-        catch (Exception e) when (e is OllamaException or HttpRequestException or JsonException)
+        catch (Exception e) when (e is ProviderException or HttpRequestException or JsonException)
         {
             log.LogWarning("Özet üretilemedi: {Message}", e.Message);
         }
@@ -306,12 +300,15 @@ public sealed class ChatService(
 
     private static string Clip(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 
-    private static string SystemPrompt(Memory[] memories, string? summary)
+    private static string SystemPrompt(Memory[] memories, string? summary, IChatProvider provider)
     {
         var tr = CultureInfo.GetCultureInfo("tr-TR");
         var now = DateTime.Now.ToString("d MMMM yyyy dddd, HH:mm", tr);
+        var where = provider.Local
+            ? "Sen Halisland'in yerel asistanısın. Kullanıcının bilgisayarında, internete çıkmadan çalışıyorsun."
+            : $"Sen Halisland'in asistanısın ({provider.Label} üzerinden). İnternette arama yapamazsın.";
         var sb = new StringBuilder($"""
-            Sen Halisland'in yerel asistanısın. Kullanıcının bilgisayarında, internete çıkmadan çalışıyorsun.
+            {where}
             Türkçe, kısa ve net cevap ver; gerekmedikçe uzun liste ya da başlık kullanma.
             Bilmediğin bir şeyi uydurma, emin değilsen söyle.
 

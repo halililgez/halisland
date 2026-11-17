@@ -10,11 +10,17 @@
 //!   (release.yml, `tauri.release.conf.json`).
 //! - Geliştirme (`tauri dev`): `dotnet run --project assistant`.
 //!
+//! Sağlayıcı (Faz 24): yerel Ollama ya da Claude, ChatGPT, Gemini. Seçim ve
+//! model settings.json'da; bulut anahtarı Windows Kimlik Bilgileri'nde
+//! (secrets.rs). Backend'e ortam değişkenleriyle verilir; değişince backend
+//! yeniden başlatılır.
+//!
 //! Backend, `HALISLAND_PARENT_PID` ile Halisland'i izler; Halisland çökerse
 //! ya da zorla kapatılırsa kendisi de kapanır. Asistan kapatılınca önce
 //! `/shutdown` ile kendisi kapanması istenir (`dotnet run` alt süreci
 //! öldürülünce asıl uygulama arkada kalırdı), sonra süreç sonlandırılır.
 
+use crate::secrets;
 use crate::settings::{self, SettingsStore};
 use serde::Serialize;
 use std::collections::hash_map::RandomState;
@@ -98,6 +104,50 @@ pub fn set_assistant_model(app: AppHandle, model: Option<String>) {
     apply(&app);
 }
 
+/// Sağlayıcıyı değiştirir ("ollama", "anthropic", "openai", "gemini"); model
+/// sağlayıcının varsayılanına döner ve backend yeniden başlar.
+#[tauri::command]
+pub fn set_assistant_provider(app: AppHandle, provider: String) -> Result<(), String> {
+    if provider != "ollama" && !secrets::is_cloud(&provider) {
+        return Err(format!("bilinmeyen sağlayıcı: {provider}"));
+    }
+    settings::update(&app, |s| {
+        if s.assistant_provider != provider {
+            s.assistant_provider = provider;
+            s.assistant_model = None;
+        }
+    });
+    apply(&app);
+    Ok(())
+}
+
+/// Anahtarı kayıtlı bulut sağlayıcıları. Anahtarların kendisi arayüze verilmez.
+#[tauri::command]
+pub fn assistant_keys() -> Vec<String> {
+    secrets::CLOUD_PROVIDERS
+        .iter()
+        .filter(|p| secrets::get(p).is_some())
+        .map(|p| p.to_string())
+        .collect()
+}
+
+/// Bulut anahtarını kaydeder (`None` ya da boş: siler). O sağlayıcı
+/// kullanılıyorsa backend yeni anahtarla yeniden başlar.
+#[tauri::command]
+pub fn set_assistant_key(app: AppHandle, provider: String, key: Option<String>) -> Result<(), String> {
+    if !secrets::is_cloud(&provider) {
+        return Err(format!("bilinmeyen sağlayıcı: {provider}"));
+    }
+    match key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+        Some(k) => secrets::set(&provider, k)?,
+        None => secrets::delete(&provider),
+    }
+    if app.state::<SettingsStore>().get().assistant_provider == provider {
+        apply(&app);
+    }
+    Ok(())
+}
+
 /// Ayardaki duruma göre backend'i başlatır ya da durdurur (arka planda;
 /// kapanmayı beklemek arayüzü kilitlemesin). Açıksa yeniden başlatır.
 pub fn apply(app: &AppHandle) {
@@ -139,8 +189,15 @@ fn start(app: &AppHandle) {
         .env("HALISLAND_ASSISTANT_TOKEN", &state.token)
         .env("HALISLAND_PARENT_PID", std::process::id().to_string())
         .stdin(Stdio::null());
-    if let Some(model) = app.state::<SettingsStore>().get().assistant_model {
+    let s = app.state::<SettingsStore>().get();
+    cmd.env("HALISLAND_PROVIDER", &s.assistant_provider);
+    if let Some(model) = s.assistant_model {
         cmd.env("HALISLAND_MODEL", model);
+    }
+    if secrets::is_cloud(&s.assistant_provider)
+        && let Some(key) = secrets::get(&s.assistant_provider)
+    {
+        cmd.env("HALISLAND_API_KEY", key);
     }
     if !cfg!(debug_assertions) {
         cmd.stdout(Stdio::null()).stderr(Stdio::null());

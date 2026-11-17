@@ -117,7 +117,7 @@ function act(id: string) {
       <button
         v-if="hasAssistant"
         class="switch-row"
-        title="Yerel dil modeliyle sohbet (Ollama). Güçlü bir ekran kartı ister."
+        title="Yerel model (Ollama) ya da Claude, ChatGPT, Gemini ile sohbet"
         @click="act('assistant')"
       >
         <span>Asistan</span>

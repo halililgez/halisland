@@ -8,10 +8,17 @@ namespace Halisland.Assistant;
 /// <summary>Yeni bir kullanıcı mesajı. Sohbet kimliği yoksa yeni sohbet açılır.</summary>
 public sealed record ChatRequest(string Text, long? ConversationId = null, bool Think = false);
 
+/// <summary>
+/// Backend ve sağlayıcının durumu. <c>Reachable</c>: sağlayıcıya ulaşıldı (Ollama
+/// açık ya da bulut anahtarı geçerli); değilse <c>Error</c> nedenini söyler.
+/// </summary>
 public sealed record HealthResponse(
     bool Ok,
     string Version,
-    bool Ollama,
+    string Provider,
+    bool Local,
+    bool Reachable,
+    string? Error,
     string Model,
     bool ModelInstalled,
     string[] Models);

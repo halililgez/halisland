@@ -66,7 +66,12 @@ pub struct Settings {
     /// Asistan (Windows). Varsayılan kapalı: yerel model güçlü bir ekran
     /// kartı ister; kapalıyken backend hiç başlatılmaz.
     pub assistant: bool,
-    /// Asistanın Ollama modeli; yoksa backend'in varsayılanı (qwen3:8b).
+    /// Asistanın konuştuğu yer: "ollama" (yerel), "anthropic", "openai" ya da
+    /// "gemini". Bulut anahtarları burada değil, Windows Kimlik Bilgileri'nde
+    /// (bkz. secrets.rs).
+    pub assistant_provider: String,
+    /// Sağlayıcının modeli; yoksa backend'in varsayılanı (Ollama'da qwen3:8b).
+    /// Sağlayıcı değişince sıfırlanır.
     pub assistant_model: Option<String>,
 }
 
@@ -83,6 +88,7 @@ impl Default for Settings {
             edge: Edge::Top,
             position: None,
             assistant: false,
+            assistant_provider: "ollama".into(),
             assistant_model: None,
         }
     }
@@ -264,6 +270,7 @@ mod tests {
         assert_eq!(s.position, None);
         assert_eq!(s.edge, Edge::Top);
         assert!(!s.assistant);
+        assert_eq!(s.assistant_provider, "ollama");
     }
 
     #[test]

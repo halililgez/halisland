@@ -11,6 +11,7 @@ mod island;
 mod location;
 mod media;
 mod power;
+mod secrets;
 mod settings;
 mod system;
 mod terminal;
@@ -39,6 +40,9 @@ pub fn run() {
             assistant::assistant_info,
             assistant::assistant_hardware,
             assistant::set_assistant_model,
+            assistant::set_assistant_provider,
+            assistant::assistant_keys,
+            assistant::set_assistant_key,
             claude::focus_claude,
             claude::claude_status,
             clipboard::clipboard_list,
