@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { useGlass, type GlassMode } from "./composables/useGlass";
 import Tile from "./components/Tile.vue";
 import MusicTile from "./components/MusicTile.vue";
+import ClaudeTile from "./components/ClaudeTile.vue";
 import { useClock } from "./composables/useClock";
 import { useFocusTimer } from "./composables/useFocusTimer";
 import { useClaudeStatus, type ClaudeState } from "./composables/useClaudeStatus";
@@ -109,14 +110,19 @@ const islandStyle = computed(() => {
         </Tile>
 
         <Tile
+          class="claude-tile"
           title="Claude"
           :glow="claudeColor"
           :pulse="claude.state.value === 'working' || claude.state.value === 'waiting'"
         >
-          <div class="big">{{ claude.label.value }}</div>
-          <div class="sub mono">
-            {{ claude.state.value === "idle" ? "Claude Code bekleniyor" : claude.elapsed.value }}
-          </div>
+          <ClaudeTile
+            :state="claude.state.value"
+            :info="claude.info.value"
+            :label="claude.label.value"
+            :detail="claude.detail.value"
+            :elapsed="claude.elapsed.value"
+            @focus="claude.focusTerminal"
+          />
         </Tile>
       </div>
     </div>
@@ -279,7 +285,11 @@ const islandStyle = computed(() => {
 }
 
 .music-tile {
-  flex: 1.9;
+  flex: 1.75;
+}
+
+.claude-tile {
+  flex: 1.35;
 }
 
 .tiles {

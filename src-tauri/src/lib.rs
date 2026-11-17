@@ -2,6 +2,7 @@ mod claude;
 mod glass;
 mod island;
 mod media;
+mod terminal;
 
 use tauri::Manager;
 
@@ -9,7 +10,10 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .manage(glass::GlassState::default())
+        .manage(claude::ClaudeStore::default())
         .invoke_handler(tauri::generate_handler![
+            claude::focus_claude,
+            claude::claude_status,
             island::resize_island,
             glass::set_glass,
             glass::set_island_shape,
