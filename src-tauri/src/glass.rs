@@ -20,8 +20,8 @@
 //! arka planıyla devam eder.
 
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
-use std::thread;
+use std::sync::{Mutex, OnceLock, mpsc};
+use std::thread::{self, ThreadId};
 use std::time::Duration;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
@@ -51,6 +51,32 @@ pub struct GlassState {
     shape: Mutex<Option<Shape>>,
 }
 
+static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
+
+/// `f`'yi ana (UI) iş parçacığında çalıştırıp sonucunu bekler. Zaten ana
+/// iş parçacığındaysak doğrudan çalıştırır (beklersek kilitlenirdik).
+fn on_main<R: Send + 'static>(
+    window: &WebviewWindow,
+    f: impl FnOnce() -> R + Send + 'static,
+) -> Option<R> {
+    if MAIN_THREAD.get() == Some(&thread::current().id()) {
+        return Some(f());
+    }
+    let (tx, rx) = mpsc::channel();
+    window
+        .run_on_main_thread(move || {
+            let _ = tx.send(f());
+        })
+        .ok()?;
+    rx.recv_timeout(Duration::from_secs(2)).ok()
+}
+
+/// Uygulama açılırken ana iş parçacığında çağrılır (`lib.rs` → setup).
+pub fn init(window: &WebviewWindow) {
+    let _ = MAIN_THREAD.set(thread::current().id());
+    platform::init(window);
+}
+
 /// Bu sistemde bulanıklık adanın oval şekline uyuyor mu? (Bkz. modül notu.)
 pub fn blur_supported() -> bool {
     platform::blur_supported()
@@ -60,7 +86,8 @@ pub fn blur_supported() -> bool {
 #[tauri::command]
 pub fn set_glass(window: WebviewWindow, mode: GlassMode) -> bool {
     let mode = if blur_supported() { mode } else { GlassMode::Off };
-    let active = platform::apply(&window, mode);
+    let w = window.clone();
+    let active = on_main(&window, move || platform::apply(&w, mode)).unwrap_or(false);
     apply_shape(&window);
     active
 }
@@ -86,6 +113,13 @@ pub fn apply_shape(window: &WebviewWindow) {
     let r = (shape.radius * scale).round() as i32;
     let x = (size.width as i32 - w) / 2;
     platform::set_region(window, x, 0, w, h, r);
+    // Oval bulanıklığın kırpması ana iş parçacığında güncellenir. Beklemiyoruz:
+    // animasyon sırasında her karede gelir.
+    if MAIN_THREAD.get() == Some(&thread::current().id()) {
+        platform::set_backdrop_shape(x, 0, w, h, r);
+    } else {
+        let _ = window.run_on_main_thread(move || platform::set_backdrop_shape(x, 0, w, h, r));
+    }
 }
 
 /// Pencere kütüphanesi (tao) bazı sistem olaylarında (kilit ekranından dönüş,
@@ -173,10 +207,32 @@ mod platform {
         }
     }
 
-    /// Windows 10'da (derleme < 22000) bulanıklık bölgeye uyuyor; 11'de uymuyor.
-    pub fn blur_supported() -> bool {
+    /// Windows 10'da (derleme < 22000) eski bulanıklık bölgeye uyuyor; 11'de uymuyor.
+    fn swca_fits_region() -> bool {
         static CACHE: OnceLock<bool> = OnceLock::new();
         *CACHE.get_or_init(|| windows_build().is_some_and(|b| b < 22000))
+    }
+
+    /// Windows 11'de oval bulanıklık (`backdrop.rs`) kuruldu mu?
+    static BACKDROP_READY: AtomicBool = AtomicBool::new(false);
+
+    pub fn init(window: &WebviewWindow) {
+        if swca_fits_region() {
+            return;
+        }
+        if let Ok(hwnd) = window.hwnd() {
+            BACKDROP_READY.store(crate::backdrop::init(hwnd), Ordering::SeqCst);
+        }
+    }
+
+    pub fn blur_supported() -> bool {
+        swca_fits_region() || BACKDROP_READY.load(Ordering::SeqCst)
+    }
+
+    pub fn set_backdrop_shape(x: i32, y: i32, w: i32, h: i32, r: i32) {
+        if BACKDROP_READY.load(Ordering::SeqCst) {
+            crate::backdrop::set_shape(x, y, w, h, r);
+        }
     }
 
     fn windows_build() -> Option<u32> {
@@ -201,6 +257,16 @@ mod platform {
     }
 
     pub fn apply(window: &WebviewWindow, mode: GlassMode) -> bool {
+        if !swca_fits_region() {
+            // Windows 11: eski bulanıklık hep kapalı (dikdörtgen çiziyor),
+            // varsa yeni oval katman kullanılır.
+            apply_swca(window, GlassMode::Off);
+            return BACKDROP_READY.load(Ordering::SeqCst) && crate::backdrop::set_mode(mode);
+        }
+        apply_swca(window, mode)
+    }
+
+    fn apply_swca(window: &WebviewWindow, mode: GlassMode) -> bool {
         let Ok(hwnd) = window.hwnd() else {
             return false;
         };
@@ -367,4 +433,8 @@ mod platform {
     pub fn blur_supported() -> bool {
         false
     }
+
+    pub fn init(_window: &WebviewWindow) {}
+
+    pub fn set_backdrop_shape(_x: i32, _y: i32, _w: i32, _h: i32, _r: i32) {}
 }
