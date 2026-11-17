@@ -8,8 +8,9 @@ export type GlassMode = "acrylic" | "blur" | "off";
  * ve pencereyi adanın şekline kırpar. Ada CSS ile animasyonla büyüyüp
  * küçüldüğü için her karede adanın boyutunu ve köşe yarıçapını bildiririz.
  *
- * Cam açılamazsa (macOS, eski Windows, tarayıcı) `active` false kalır ve
- * ada CSS'teki yarı saydam koyu arka planla görünür.
+ * Cam açılamazsa (macOS, Windows 11, tarayıcı) `active` false kalır ve
+ * ada CSS'teki yarı saydam koyu arka planla görünür. Şekil yine de her zaman
+ * gönderilir: Windows'ta pencere cam kapalıyken de adanın şekline kırpılır.
  */
 export function useGlass(el: Ref<HTMLElement | null>, mode: WatchSource<GlassMode>) {
   const active = ref(false);
@@ -20,7 +21,7 @@ export function useGlass(el: Ref<HTMLElement | null>, mode: WatchSource<GlassMod
   function sendShape() {
     frame = undefined;
     const node = el.value;
-    if (!node || !active.value) return;
+    if (!node) return;
     const rect = node.getBoundingClientRect();
     const radius = parseFloat(getComputedStyle(node).borderTopLeftRadius) || 0;
     const shape = { width: rect.width, height: rect.height, radius };
