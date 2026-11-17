@@ -109,6 +109,32 @@ export function useReminders() {
   return { reminders, fired, now, next, add, cancel, dismiss };
 }
 
+/**
+ * "10 dk çay", "1,5 saat fırın", "30 sn yumurta" ya da "15:30 toplantı" →
+ * hatırlatıcı (an ve metin). Uymazsa null: metin yapılacak olarak eklenir.
+ */
+export function parseReminder(input: string, now = Date.now()): { at: number; text: string } | null {
+  const s = input.trim();
+  const rel = s.match(/^(\d+(?:[.,]\d+)?)\s*(sn|saniye|dk|dakika|sa|saat)\.?\s+(.+)$/i);
+  if (rel) {
+    const n = Number(rel[1].replace(",", "."));
+    const unit = rel[2].toLocaleLowerCase("tr");
+    const ms = unit.startsWith("s") && unit !== "sa" && unit !== "saat" ? 1000 : unit === "sa" || unit === "saat" ? 3600_000 : 60_000;
+    return n > 0 ? { at: now + n * ms, text: rel[3].trim() } : null;
+  }
+  const abs = s.match(/^(\d{1,2})[:.](\d{2})\s+(.+)$/);
+  if (abs) {
+    const h = Number(abs[1]);
+    const m = Number(abs[2]);
+    if (h > 23 || m > 59) return null;
+    const d = new Date(now);
+    d.setHours(h, m, 0, 0);
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+    return { at: d.getTime(), text: abs[3].trim() };
+  }
+  return null;
+}
+
 /** Kalan süre: "4:59", "1:05:00". */
 export function countdown(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));

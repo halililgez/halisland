@@ -17,7 +17,7 @@ import {
   type WeatherCity,
 } from "../composables/useWeather";
 import { useTodos } from "../composables/useTodos";
-import { useReminders, clockTime, shortLeft } from "../composables/useReminders";
+import { useReminders, clockTime, shortLeft, parseReminder } from "../composables/useReminders";
 import type { FocusState } from "../composables/useFocusTimer";
 
 const props = defineProps<{
@@ -141,8 +141,11 @@ const { todos, add, toggle, remove, clearDone } = useTodos();
 const reminders = useReminders();
 const draft = ref("");
 const doneCount = computed(() => todos.value.filter((t) => t.done).length);
+/** "10 dk çay" ya da "15:30 toplantı" hatırlatıcı kurar; gerisi yapılacak olur. */
 function submit() {
-  add(draft.value);
+  const r = parseReminder(draft.value);
+  if (r) reminders.add(r.at, r.text);
+  else add(draft.value);
   draft.value = "";
 }
 
@@ -297,7 +300,7 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
       <input
         v-model="draft"
         class="todo-input"
-        placeholder="Ekle ve Enter'a bas…"
+        placeholder="Ekle ya da ⏰ “10 dk çay” yaz…"
         spellcheck="false"
         maxlength="200"
         aria-label="Yapılacak ekle"
