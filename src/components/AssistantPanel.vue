@@ -1,19 +1,27 @@
 <script setup lang="ts">
 /**
- * Asistan sekmesi: yerel modelle (Ollama) sohbet. Başlıkta Geçmiş, Hafıza,
- * "Düşün" anahtarı ve Yeni; altta mesajlar ve yazma kutusu.
- * Geçmiş ve Hafıza aynı kutucuğun içinde liste olarak açılır.
+ * Asistan sekmesi: yerel modelle (Ollama) ya da bir bulut sağlayıcıyla
+ * (Claude, ChatGPT, Gemini) sohbet. Başlıkta sağlayıcı (Model görünümü),
+ * Geçmiş, Hafıza, "Düşün" anahtarı ve Yeni; altta mesajlar ve yazma kutusu.
+ * Model, Geçmiş ve Hafıza aynı kutucuğun içinde açılır.
  * Enter gönderir, Esc yanıtı durdurur (liste açıksa sohbete döner).
  */
 import { computed, nextTick, ref, watch } from "vue";
 import Tile from "./Tile.vue";
-import { BIG_MODEL, type Assistant, type AssistantStatus, type ChatMsg } from "../composables/useAssistant";
+import {
+  BIG_MODEL,
+  PROVIDERS,
+  providerInfo,
+  type Assistant,
+  type AssistantStatus,
+  type ChatMsg,
+} from "../composables/useAssistant";
 import { timeAgo } from "../composables/useClipboard";
 
 const props = defineProps<{ assistant: Assistant; active: boolean }>();
 const a = props.assistant;
 
-type View = "chat" | "history" | "memory";
+type View = "chat" | "model" | "history" | "memory";
 const view = ref<View>("chat");
 
 const draft = ref("");
@@ -31,18 +39,71 @@ const STATUS_TEXT: Record<AssistantStatus, string> = {
   connecting: "Asistan açılıyor…",
   offline: "Asistan servisi çalışmıyor.",
   "no-ollama": "Ollama kapalı ya da kurulu değil (ollama.com). Başlatınca burası kendiliğinden açılır.",
+  "no-key": "",
+  "provider-error": "",
   "no-model": "",
   ready: "",
 };
 
-const statusText = computed(() =>
-  a.status.value === "no-model"
-    ? `${a.model.value} kurulu değil.`
-    : STATUS_TEXT[a.status.value],
+/** Seçili sağlayıcı. */
+const current = computed(() => providerInfo(a.provider.value));
+
+const statusText = computed(() => {
+  switch (a.status.value) {
+    case "no-model":
+      return a.local.value
+        ? `${a.model.value} kurulu değil.`
+        : `${a.model.value} bu hesapta yok; listeden başka bir model seç.`;
+    case "no-key":
+      return `${current.value.label} için API anahtarı gerekli.`;
+    case "provider-error":
+      return a.providerError.value || `${current.value.label} sunucusuna bağlanılamadı.`;
+    default:
+      return STATUS_TEXT[a.status.value];
+  }
+});
+
+/** Yerel: Ollama yok ya da model kurulu değil; kurulum yardımı gösterilir. */
+const needsSetup = computed(
+  () => a.local.value && (a.status.value === "no-ollama" || a.status.value === "no-model"),
+);
+/** Bulut: anahtar yok, geçersiz ya da model yok; Model görünümüne yönlendirilir. */
+const cloudSetup = computed(
+  () =>
+    !a.local.value &&
+    (a.status.value === "no-key" || a.status.value === "provider-error" || a.status.value === "no-model"),
 );
 
-/** Ollama yok ya da model kurulu değil: kurulum yardımı gösterilir. */
-const needsSetup = computed(() => a.status.value === "no-ollama" || a.status.value === "no-model");
+/** Model görünümünde seçilebilecek modeller (gömme modelleri hariç). */
+const modelChoices = computed(() => a.installed.value.filter((m) => !/embed/i.test(m)));
+
+// ---------- Bulut anahtarı ----------
+const keyDraft = ref("");
+const keyError = ref("");
+const editingKey = ref(false);
+const savingKey = ref(false);
+const hasKey = computed(() => a.keys.value.includes(a.provider.value));
+
+async function saveKey() {
+  const key = keyDraft.value.trim();
+  if (!key || savingKey.value || a.local.value) return;
+  savingKey.value = true;
+  keyError.value = (await a.saveKey(current.value.id, key)) ?? "";
+  savingKey.value = false;
+  if (!keyError.value) {
+    keyDraft.value = "";
+    editingKey.value = false;
+  }
+}
+
+watch(
+  () => a.provider.value,
+  () => {
+    keyDraft.value = "";
+    keyError.value = "";
+    editingKey.value = false;
+  },
+);
 /** Önerilen modelin kurulum komutu. */
 const pullModel = computed(() => a.advice.value?.model ?? a.model.value);
 /** Geçilebilecek kurulu sohbet modelleri (gömme modelleri hariç). */
@@ -213,6 +274,15 @@ watch(
           <span class="actions">
             <button
               class="mini-chip"
+              :class="{ active: view === 'model' }"
+              :aria-pressed="view === 'model'"
+              :title="a.model.value ? `Sağlayıcı ve model: ${a.model.value}` : 'Sağlayıcı ve model'"
+              @click="show('model')"
+            >
+              {{ current.label }}
+            </button>
+            <button
+              class="mini-chip"
               :class="{ active: view === 'history' }"
               :aria-pressed="view === 'history'"
               title="Geçmiş sohbetler"
@@ -251,8 +321,80 @@ watch(
         </span>
       </template>
 
+      <!-- Model: sağlayıcı, bulut anahtarı ve model seçimi -->
+      <div v-if="view === 'model'" class="body model-view">
+        <div class="segmented" role="radiogroup" aria-label="Asistanın sağlayıcısı">
+          <button
+            v-for="p in PROVIDERS"
+            :key="p.id"
+            role="radio"
+            :aria-checked="a.provider.value === p.id"
+            :class="{ active: a.provider.value === p.id }"
+            @click="a.setProvider(p.id)"
+          >
+            {{ p.label }}
+          </button>
+        </div>
+
+        <span class="setup-status">
+          <span class="state-dot" :class="a.status.value" aria-hidden="true" />
+          <span class="status-line">{{ a.ready.value ? `Hazır · ${a.model.value}` : statusText }}</span>
+        </span>
+
+        <template v-if="!a.local.value">
+          <p class="privacy">
+            Mesajların, hatırladıkların ve sohbet özetleri {{ current.company }} sunucularına gider; ücreti
+            API hesabına yansır. Sohbet geçmişi yine bu bilgisayarda kalır.
+          </p>
+          <div v-if="hasKey && !editingKey" class="key-row">
+            <span class="key-ok">Anahtar kayıtlı · Windows Kimlik Bilgileri</span>
+            <button class="mini-chip" @click="editingKey = true">Değiştir</button>
+            <button
+              class="mini-chip danger"
+              :class="{ armed: confirming === 'key' }"
+              @click="confirmThen('key', () => a.removeKey(current.id))"
+            >
+              {{ confirming === "key" ? "Silinsin mi?" : "Sil" }}
+            </button>
+          </div>
+          <form v-else class="key-row" @submit.prevent="saveKey">
+            <input
+              v-model="keyDraft"
+              type="password"
+              class="prompt key-input"
+              :placeholder="`${current.label} API anahtarı`"
+              autocomplete="off"
+              spellcheck="false"
+              :aria-label="`${current.label} API anahtarı`"
+            />
+            <button class="mini-chip" type="submit" :disabled="!keyDraft.trim() || savingKey">Kaydet</button>
+            <button v-if="hasKey" type="button" class="mini-chip" @click="editingKey = false">Vazgeç</button>
+          </form>
+          <span v-if="!hasKey || editingKey" class="key-help">
+            Anahtarı <span class="mono">{{ current.keyUrl }}</span> adresinden alabilirsin.
+          </span>
+          <p v-if="keyError" class="error">{{ keyError }}</p>
+        </template>
+        <span v-else-if="a.advice.value" class="advice" :class="a.advice.value.level">
+          {{ a.advice.value.text }}
+        </span>
+
+        <div v-if="modelChoices.length" class="model-list">
+          <button
+            v-for="m in modelChoices"
+            :key="m"
+            class="mini-chip mono"
+            :class="{ active: m === a.model.value, recommended: a.local.value && m === a.advice.value?.model }"
+            :aria-pressed="m === a.model.value"
+            @click="a.setModel(m)"
+          >
+            {{ m }}
+          </button>
+        </div>
+      </div>
+
       <!-- Geçmiş -->
-      <div v-if="view === 'history'" class="body">
+      <div v-else-if="view === 'history'" class="body">
         <ul v-if="a.conversations.value.length" class="rows">
           <li
             v-for="c in a.conversations.value"
@@ -337,12 +479,23 @@ watch(
           </span>
           <code v-if="!choices.includes(pullModel)" class="pull mono">ollama pull {{ pullModel }}</code>
         </div>
+        <div v-else-if="cloudSetup && !a.messages.value.length" class="empty hint setup">
+          <span class="setup-status">
+            <span class="state-dot" :class="a.status.value" aria-hidden="true" />
+            {{ statusText }}
+          </span>
+          <button class="mini-chip" @click="show('model')">Ayarla</button>
+        </div>
         <div v-else-if="!a.ready.value && !a.messages.value.length" class="empty">
           <span class="state-dot" :class="a.status.value" aria-hidden="true" />
           {{ statusText }}
         </div>
         <div v-else-if="!a.messages.value.length" class="empty hint">
-          Bir şey sor. Her şey bu bilgisayarda kalır.
+          {{
+            a.local.value
+              ? "Bir şey sor. Her şey bu bilgisayarda kalır."
+              : `Bir şey sor. Mesajların ${current.company} sunucularına gider.`
+          }}
           <small class="mono">{{ a.model.value }}</small>
           <small v-if="slowWarning" class="advice weak">{{ slowWarning }}</small>
         </div>
@@ -642,9 +795,115 @@ watch(
   animation: blink 1.2s ease-in-out infinite;
 }
 
+.state-dot.ready {
+  background: var(--c-seen);
+}
+
 .state-dot.unsupported,
 .state-dot.disabled {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* ---------- Model görünümü ---------- */
+.model-view {
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.model-view .setup-status {
+  min-width: 0;
+}
+
+.status-line {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.segmented {
+  flex: none;
+  display: flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.segmented button {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 0;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-dim);
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.segmented button:hover {
+  color: var(--text);
+}
+
+.segmented button.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.privacy {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.key-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.key-ok {
+  flex: 1;
+  min-width: 0;
+  color: var(--c-seen);
+}
+
+.key-input {
+  height: 22px;
+  font-size: 11px;
+}
+
+.key-help {
+  font-size: 10px;
+}
+
+.key-help .mono {
+  color: var(--text);
+  user-select: text;
+}
+
+.model-view .error {
+  margin: 0;
+}
+
+.model-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.mini-chip.mono {
+  font-size: 10px;
 }
 
 /* ---------- Geçmiş ve Hafıza listeleri ---------- */

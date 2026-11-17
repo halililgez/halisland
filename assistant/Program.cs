@@ -7,6 +7,9 @@ using Halisland.Assistant;
 //   HALISLAND_ASSISTANT_PORT   dinlenecek port (varsayılan 47822)
 //   HALISLAND_ASSISTANT_TOKEN  arayüzün her istekte göndereceği anahtar
 //   HALISLAND_PARENT_PID       Halisland kapanınca bu süreç de kapanır
+//   HALISLAND_PROVIDER         ollama (varsayılan), anthropic, openai ya da gemini
+//   HALISLAND_MODEL            sağlayıcının modeli (yoksa varsayılanı)
+//   HALISLAND_API_KEY          bulut sağlayıcının anahtarı (Windows Kimlik Bilgileri'nden)
 //   HALISLAND_DATA_DIR         veritabanı klasörü (varsayılan %APPDATA%\com.halil.halisland)
 // Elle `dotnet run` ile açılırsa anahtar istenmez (yalnızca geliştirme için).
 
@@ -21,14 +24,15 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResol
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(new Store(Store.DefaultDataDir()));
 builder.Services.AddSingleton<ToolRegistry>();
-// OllamaClient her istekte yeni (typed client); onu kullanan ChatService de.
-builder.Services.AddTransient<ChatService>();
-builder.Services.AddHttpClient<OllamaClient>(c =>
+// Sağlayıcı açılışta seçilir; değişince Halisland backend'i yeniden başlatır.
+builder.Services.AddSingleton<IChatProvider>(options.Provider switch
 {
-    c.BaseAddress = new Uri(options.OllamaUrl);
-    // Akış uzun sürebilir (düşünme açıkken dakikalarca); iptal isteğe bağlı.
-    c.Timeout = Timeout.InfiniteTimeSpan;
+    "anthropic" => new AnthropicProvider(options),
+    "openai" => new OpenAiProvider(options),
+    "gemini" => new GeminiProvider(options),
+    _ => new OllamaProvider(options),
 });
+builder.Services.AddTransient<ChatService>();
 // Yalnızca Halisland'in kendi penceresi (ve geliştirmede Vite) erişebilsin.
 // Başka bir web sayfası istek atarsa tarayıcı ön kontrolde (preflight) durdurur.
 builder.Services.AddCors(o => o.AddDefaultPolicy(policy => policy
@@ -57,16 +61,19 @@ WatchParent(app);
 
 var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
-app.MapGet("/health", async (OllamaClient ollama, CancellationToken ct) =>
+app.MapGet("/health", async (IChatProvider provider, CancellationToken ct) =>
 {
-    var models = await ollama.ListModelsAsync(ct);
+    var s = await provider.StatusAsync(ct);
     return new HealthResponse(
         Ok: true,
         Version: version,
-        Ollama: models is not null,
-        Model: options.Model,
-        ModelInstalled: models?.Any(m => SameModel(m, options.Model)) ?? false,
-        Models: models ?? []);
+        Provider: provider.Id,
+        Local: provider.Local,
+        Reachable: s.Reachable,
+        Error: s.Error,
+        Model: provider.Model,
+        ModelInstalled: s.Models.Any(m => SameModel(m, provider.Model)),
+        Models: s.Models);
 });
 
 // Halisland asistanı kapatınca çağırır (assistant.rs). `dotnet run` ile
@@ -77,14 +84,14 @@ app.MapPost("/shutdown", (IHostApplicationLifetime life) =>
     return Results.NoContent();
 });
 
-app.MapPost("/warmup", async (OllamaClient ollama, CancellationToken ct) =>
+app.MapPost("/warmup", async (IChatProvider provider, CancellationToken ct) =>
 {
     try
     {
-        await ollama.WarmupAsync(ct);
+        await provider.WarmupAsync(ct);
         return Results.NoContent();
     }
-    catch (Exception e) when (e is OllamaException or HttpRequestException)
+    catch (Exception e) when (e is ProviderException or HttpRequestException)
     {
         return Results.Problem(e.Message, statusCode: StatusCodes.Status502BadGateway);
     }

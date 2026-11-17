@@ -2,9 +2,12 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * Yerel asistan. İsteğe bağlı (Faz 23): ayarlarda açılınca backend
+ * Asistan. İsteğe bağlı (Faz 23): ayarlarda açılınca backend
  * `assistant/` (.NET) Halisland ile birlikte başlar;
  * arayüz onunla doğrudan `127.0.0.1:47822` üzerinden konuşur.
+ * Backend yerel modelle (Ollama) ya da bir bulut sağlayıcıyla konuşur
+ * (Faz 24); bulut anahtarları Windows Kimlik Bilgileri'nde durur, arayüz
+ * onları yalnızca kaydederken görür.
  * Sohbetler, mesajlar ve hatırlananlar backend'in SQLite veritabanında
  * (Faz 22); burada yalnızca açık sohbetin görüntüsü tutulur.
  */
@@ -17,10 +20,37 @@ interface AssistantInfo {
 
 interface Health {
   ok: boolean;
-  ollama: boolean;
+  provider: string;
+  local: boolean;
+  /** Sağlayıcıya ulaşıldı (Ollama açık ya da anahtar geçerli). */
+  reachable: boolean;
+  error: string | null;
   model: string;
   modelInstalled: boolean;
   models: string[];
+}
+
+export type ProviderId = "ollama" | "anthropic" | "openai" | "gemini";
+
+export interface ProviderInfo {
+  id: ProviderId;
+  /** Seçicide görünen kısa ad. */
+  label: string;
+  /** Verilerin gittiği şirket (yerelde boş). */
+  company: string;
+  /** Anahtarın alınacağı sayfa. */
+  keyUrl: string;
+}
+
+export const PROVIDERS: ProviderInfo[] = [
+  { id: "ollama", label: "Yerel", company: "", keyUrl: "" },
+  { id: "anthropic", label: "Claude", company: "Anthropic", keyUrl: "console.anthropic.com" },
+  { id: "openai", label: "ChatGPT", company: "OpenAI", keyUrl: "platform.openai.com/api-keys" },
+  { id: "gemini", label: "Gemini", company: "Google", keyUrl: "aistudio.google.com/apikey" },
+];
+
+export function providerInfo(id: string): ProviderInfo {
+  return PROVIDERS.find((p) => p.id === id) ?? PROVIDERS[0];
 }
 
 /** Yerel model için donanım (`assistant_hardware`). */
@@ -84,6 +114,8 @@ export type AssistantStatus =
   | "connecting" // backend açılıyor (dev'de `dotnet run` birkaç saniye sürer)
   | "offline" // backend yok
   | "no-ollama"
+  | "no-key" // bulut sağlayıcı seçili, anahtar yok
+  | "provider-error" // anahtar geçersiz, kota, ağ yok...
   | "no-model"
   | "ready";
 
@@ -145,11 +177,16 @@ function save(key: string, value: string | null) {
   }
 }
 
-export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>) {
+export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provider: Ref<string>) {
   const status = ref<AssistantStatus>(enabled.value ? "connecting" : "disabled");
   const model = ref("");
-  /** Ollama'da kurulu modeller. */
+  /** Sağlayıcının modelleri (Ollama'da kurulu olanlar). */
   const installed = ref<string[]>([]);
+  /** Sağlayıcının hata mesajı (status "provider-error"). */
+  const providerError = ref("");
+  /** Anahtarı kayıtlı bulut sağlayıcıları. */
+  const keys = ref<string[]>([]);
+  const local = computed(() => provider.value === "ollama");
   const hardware = ref<Hardware | null>(null);
   const advice = computed(() => (hardware.value ? advise(hardware.value) : null));
   const messages = ref<ChatMsg[]>([]);
@@ -215,9 +252,20 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>) {
       });
       if (!res.ok) throw new Error(String(res.status));
       const h = (await res.json()) as Health;
+      // Sağlayıcı değişip backend henüz yeniden başlamadıysa eskisi cevap verir.
+      if (h.provider !== provider.value) throw new Error("eski backend");
       model.value = h.model;
       installed.value = h.models;
-      status.value = !h.ollama ? "no-ollama" : !h.modelInstalled ? "no-model" : "ready";
+      providerError.value = h.error ?? "";
+      status.value = h.reachable
+        ? h.modelInstalled
+          ? "ready"
+          : "no-model"
+        : h.local
+          ? "no-ollama"
+          : keys.value.includes(h.provider)
+            ? "provider-error"
+            : "no-key";
     } catch {
       status.value = Date.now() - startedAt < STARTUP_GRACE_MS ? "connecting" : "offline";
     }
@@ -266,21 +314,64 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>) {
     check().then(schedule);
   });
 
+  watch(provider, () => {
+    if (enabled.value) restarting();
+  });
+
+  async function loadKeys() {
+    keys.value = await invoke<string[]>("assistant_keys").catch(() => []);
+  }
+  loadKeys();
+
   async function loadHardware() {
     if (hardware.value) return;
     hardware.value = await invoke<Hardware>("assistant_hardware").catch(() => null);
   }
   if (enabled.value) loadHardware();
 
-  /** Ollama modelini değiştirir; backend yeniden başlar. */
-  async function setModel(name: string) {
+  /** Backend yeniden başlarken: "bağlanıyor" göster, birazdan yeniden bak. */
+  function restarting() {
     stop();
     startedAt = Date.now();
     status.value = "connecting";
-    model.value = name;
     warmedUp = false;
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => check().then(schedule), 1500);
+  }
+
+  /** Modeli değiştirir; backend yeniden başlar. */
+  async function setModel(name: string) {
+    if (name === model.value && status.value === "ready") return;
+    model.value = name;
     await invoke("set_assistant_model", { model: name }).catch(() => {});
-    window.setTimeout(() => check().then(schedule), 1500);
+    restarting();
+  }
+
+  /** Sağlayıcıyı değiştirir; model varsayılana döner, backend yeniden başlar. */
+  async function setProvider(id: ProviderId) {
+    if (id === provider.value) return;
+    installed.value = [];
+    model.value = "";
+    await invoke("set_assistant_provider", { provider: id }).catch(() => {});
+    // Ayar olayı (settings-changed) provider'ı güncelleyince restarting() çağrılır.
+  }
+
+  /** Bulut anahtarını kaydeder; hata olursa mesajı döndürür. */
+  async function saveKey(id: ProviderId, key: string): Promise<string | null> {
+    try {
+      await invoke("set_assistant_key", { provider: id, key });
+    } catch (e) {
+      return String(e);
+    }
+    await loadKeys();
+    if (id === provider.value) restarting();
+    return null;
+  }
+
+  async function removeKey(id: ProviderId) {
+    await invoke("set_assistant_key", { provider: id, key: null }).catch(() => {});
+    await loadKeys();
+    if (id === provider.value) restarting();
   }
   onBeforeUnmount(() => {
     window.clearTimeout(timer);
@@ -450,6 +541,13 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>) {
     hardware,
     advice,
     setModel,
+    provider,
+    local,
+    providerError,
+    keys,
+    setProvider,
+    saveKey,
+    removeKey,
     messages,
     think,
     busy,

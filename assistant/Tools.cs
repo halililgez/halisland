@@ -6,14 +6,14 @@ namespace Halisland.Assistant;
 public sealed record ToolResult(string ForModel, string ForUser);
 
 /// <summary>
-/// Modelin çağırabildiği araçlar (Ollama tool calling). Faz 22: yalnızca
+/// Modelin çağırabildiği araçlar (her sağlayıcı kendi biçimine çevirir). Faz 22: yalnızca
 /// hafıza (hatirla). Faz 25'te dosya, uygulama ve not araçları eklenecek.
 /// </summary>
 public sealed class ToolRegistry(Store store)
 {
     public const int MaxMemoryLength = 300;
 
-    public static readonly OllamaTool[] Definitions =
+    public static readonly ToolDef[] Definitions =
     [
         // Silme aracı bilerek yok: denemede model "unutma" (= hatırla) isteğinde
         // silme aracını çağırıp başka bir bilgiyi sildi. Silme yalnızca Hafıza listesinden.
@@ -27,10 +27,10 @@ public sealed class ToolRegistry(Store store)
             """),
     ];
 
-    private static OllamaTool Tool(string name, string description, string schema) =>
-        new("function", new OllamaFunctionDef(name, description, JsonDocument.Parse(schema).RootElement.Clone()));
+    private static ToolDef Tool(string name, string description, string schema) =>
+        new(name, description, JsonDocument.Parse(schema).RootElement.Clone());
 
-    public ToolResult Execute(OllamaFunctionCall call)
+    public ToolResult Execute(ToolCall call)
     {
         try
         {

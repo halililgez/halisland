@@ -67,6 +67,7 @@ const HAS_ASSISTANT = navigator.userAgent.includes("Windows");
  * backend de başlatılmaz. Her bilgisayar yerel modeli kaldıramaz.
  */
 const assistantOn = computed(() => HAS_ASSISTANT && settings.value.assistant);
+const assistantProvider = computed(() => settings.value.assistantProvider);
 const TABS = computed<{ id: Tab; label: string }[]>(() => [
   { id: "main", label: "Ana" },
   ...(assistantOn.value ? [{ id: "assistant" as const, label: "Asistan" }] : []),
@@ -110,7 +111,7 @@ const speedLabel = computed(() => {
 
 /** Asistan burada tutulur: ada kapanınca sohbet ve süren cevap kaybolmasın. */
 const assistantActive = computed(() => island.expanded.value && isActive("assistant"));
-const assistant = useAssistant(assistantActive, assistantOn);
+const assistant = useAssistant(assistantActive, assistantOn, assistantProvider);
 // Asistan kapatılınca sekmesi kaybolur; üstündeysek ana sekmeye dön.
 watch(assistantOn, (on) => {
   if (!on && tab.value === "assistant") tab.value = "main";

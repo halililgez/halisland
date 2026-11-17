@@ -21,7 +21,9 @@ export interface Settings {
   edge: Edge;
   /** Asistan açık mı? Varsayılan kapalı: yerel model güçlü bir ekran kartı ister. */
   assistant: boolean;
-  /** Asistanın Ollama modeli; null: backend'in varsayılanı (qwen3:8b). */
+  /** Asistanın sağlayıcısı: "ollama" (yerel), "anthropic", "openai", "gemini". */
+  assistantProvider: string;
+  /** Sağlayıcının modeli; null: backend'in varsayılanı (Ollama'da qwen3:8b). */
   assistantModel: string | null;
 }
 
@@ -35,6 +37,7 @@ const DEFAULTS: Settings = {
   weatherCity: null,
   edge: "top",
   assistant: false,
+  assistantProvider: "ollama",
   assistantModel: null,
 };
 
