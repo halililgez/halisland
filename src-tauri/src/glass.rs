@@ -13,14 +13,15 @@
 //! macOS: ileride (vibrancy). Şimdilik cam kapalı döner, frontend CSS
 //! arka planıyla devam eder.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{Manager, WebviewWindow};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GlassMode {
     /// Buzlu cam (bulanık + hafif doku)
+    #[default]
     Acrylic,
     /// Sade bulanıklık
     Blur,

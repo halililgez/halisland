@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { onBeforeUnmount, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 export const COMPACT = { width: 320, height: 44 };
@@ -19,6 +19,16 @@ const COLLAPSE_DELAY_MS = 450;
 export function useIsland(onExpand?: () => void) {
   const expanded = ref(false);
   let pending: number | undefined;
+
+  // Güvenlik ağı: WebView bazen fare gerçekten üstünde değilken `mouseenter`
+  // gönderiyor (ör. açılışta) ya da hızlı çıkışta `mouseleave`'i kaçırıyor.
+  // Ada açıkken imleç gerçekten pencerenin dışındaysa kapat.
+  const guard = window.setInterval(async () => {
+    if (!expanded.value || pending !== undefined) return;
+    const over = await invoke<boolean>("cursor_over_island").catch(() => true);
+    if (!over && expanded.value && pending === undefined) hoverOut();
+  }, 1500);
+  onBeforeUnmount(() => window.clearInterval(guard));
 
   const resize = (size: { width: number; height: number }) =>
     invoke("resize_island", size).catch((e) => console.error("resize_island", e));

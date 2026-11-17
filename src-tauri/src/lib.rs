@@ -2,39 +2,68 @@ mod claude;
 mod glass;
 mod island;
 mod media;
+mod settings;
 mod terminal;
+mod tray;
 
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // İkinci kez açılırsa yeni ada açma, var olanı göster. (Port 47821
+        // zaten ilk kopyada açık olurdu.)
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+            }
+        }))
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .manage(glass::GlassState::default())
         .manage(claude::ClaudeStore::default())
         .invoke_handler(tauri::generate_handler![
             claude::focus_claude,
             claude::claude_status,
             island::resize_island,
+            island::cursor_over_island,
             glass::set_glass,
             glass::set_island_shape,
-            media::media_control
+            media::media_control,
+            settings::get_settings
         ])
+        .on_window_event(|window, event| {
+            if let WindowEvent::Moved(_) = event
+                && let Some(w) = window.app_handle().get_webview_window(window.label())
+            {
+                settings::remember_position(&w);
+            }
+        })
         .setup(|app| {
             // macOS: Dock'ta ve Cmd+Tab'de görünmesin, sadece ada olarak yaşasın.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            let handle = app.handle().clone();
+            app.manage(settings::SettingsStore::load(&handle));
+            settings::sync_autostart(&handle);
+            settings::start_saver(handle.clone());
+
             let window = app
                 .get_webview_window("main")
                 .expect("main penceresi bulunamadı");
-            island::place_top_center(&window)?;
+            if !settings::restore_position(&window) {
+                island::place_top_center(&window)?;
+            }
             window.show()?;
 
+            tray::setup(&handle)?;
+
             // Claude Code hook'larını dinleyen küçük yerel HTTP sunucusu.
-            claude::start_server(app.handle().clone());
+            claude::start_server(handle.clone());
 
             // Çalan müzik (Windows: SMTC).
-            media::start_watcher(app.handle().clone());
+            media::start_watcher(handle);
             Ok(())
         })
         .run(tauri::generate_context!())

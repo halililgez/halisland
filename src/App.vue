@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useGlass, type GlassMode } from "./composables/useGlass";
+import { useGlass } from "./composables/useGlass";
+import { useSettings } from "./composables/useSettings";
 import Tile from "./components/Tile.vue";
 import MusicTile from "./components/MusicTile.vue";
 import ClaudeTile from "./components/ClaudeTile.vue";
@@ -10,15 +11,21 @@ import { useClaudeStatus, type ClaudeState } from "./composables/useClaudeStatus
 import { COMPACT, EXPANDED, useIsland } from "./composables/useIsland";
 import { useMedia } from "./composables/useMedia";
 
+const settings = useSettings();
 const { time, date } = useClock();
-const focus = useFocusTimer(25);
+const focus = useFocusTimer(computed(() => settings.value.focusMinutes));
 const claude = useClaudeStatus();
+const islandEl = ref<HTMLElement | null>(null);
 const island = useIsland(() => claude.markSeen());
 const media = useMedia();
 
-const islandEl = ref<HTMLElement | null>(null);
-const glassMode = ref<GlassMode>("acrylic");
-useGlass(islandEl, glassMode);
+useGlass(
+  islandEl,
+  computed(() => settings.value.glass),
+);
+
+/** Kapak rengi; ayarlardan kapatılabilir. */
+const accent = computed(() => (settings.value.tint ? media.accent.value : undefined));
 
 const CLAUDE_COLORS: Record<ClaudeState, string | undefined> = {
   idle: undefined,
@@ -41,7 +48,7 @@ const islandStyle = computed(() => {
   return {
     width: `${size.width}px`,
     height: `${size.height}px`,
-    "--accent": media.accent.value ?? "transparent",
+    "--accent": accent.value ?? "transparent",
   };
 });
 </script>
@@ -50,7 +57,7 @@ const islandStyle = computed(() => {
   <div
     ref="islandEl"
     class="island"
-    :class="{ expanded: island.expanded.value, tinted: !!media.accent.value }"
+    :class="{ expanded: island.expanded.value, tinted: !!accent }"
     :style="islandStyle"
     @mouseenter="island.hoverIn"
     @mouseleave="island.hoverOut"
@@ -85,7 +92,7 @@ const islandStyle = computed(() => {
         <Tile
           class="music-tile"
           title="Müzik"
-          :glow="media.state.value.playing ? media.accent.value : undefined"
+          :glow="media.state.value.playing ? accent : undefined"
           :dim="!media.state.value.active"
         >
           <MusicTile
