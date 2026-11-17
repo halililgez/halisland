@@ -607,8 +607,14 @@ const islandStyle = computed(() => {
   justify-self: center;
 }
 
+/* Dikey adada sekme şeridi 360 px'e sığmalı (iç genişlik 332 px, şeridin
+   kenar boşluğu ve çerçevesi düşülünce 326 px): sekme sayısı arttıkça daralır. */
 .island.vertical .tabs {
-  --tab-w: 46px;
+  --tab-w: min(46px, calc(326px / var(--tab-count)));
+}
+
+.island.vertical .tabs button {
+  font-size: 10px;
 }
 
 .island.vertical .track > .page {
