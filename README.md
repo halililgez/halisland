@@ -11,7 +11,8 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 - **Odak sayacı:** 25 dakikalık sayaç (başlat / duraklat / sıfırla). Çalışırken kompakt adada kalan süre görünür.
 - **Claude Code:** Claude çalışırken kutucuk turuncu parlar, onay beklerken sarıya döner. İş bitince mavi olur, sen adaya bakınca yeşile döner ve söner. Açık adada proje adı, son istemin, şu an ne yaptığı (komut çalıştırıyor, dosya düzenliyor...), neden beklediği ve değişen dosyalar görünür. **Terminale dön** düğmesi Claude'un çalıştığı pencereyi (Windows Terminal, VS Code, Claude masaüstü...) öne getirir.
 - **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
-- **Sekmeler:** Açık adanın üstündeki şeritten **Ana**, **Bugün**, **Kontrol**, **Pano**, **Sistem** ve **Güç** arasında geçilir. Ada kapanınca bir sonraki açılış Ana sekmeyle başlar.
+- **Asistan (Windows):** Bilgisayarında çalışan yerel bir dil modeliyle ([Ollama](https://ollama.com), varsayılan `qwen3:8b`) sohbet. Cevaplar yazıldıkça akar; **Düşün** anahtarı açıkken model önce düşünür (daha dikkatli ama daha yavaş), düşünceyi sonradan açıp okuyabilirsin. Enter gönderir, Esc durdurur. Sohbet bu sekmede ada aşağı doğru uzar. Hiçbir şey internete gitmez. Ollama'nın kurulu ve açık olması gerekir (`ollama pull qwen3:8b`).
+- **Sekmeler:** Açık adanın üstündeki şeritten **Ana**, **Asistan**, **Bugün**, **Kontrol**, **Pano**, **Sistem** ve **Güç** arasında geçilir. Ada kapanınca bir sonraki açılış Ana sekmeyle başlar.
 - **Kontrol (Windows):** Ses seviyesi kaydırıcısı (fare tekerleğiyle de), sessiz düğmesi, 0/25/50/75/100 hızlı seviyeler; çıkış aygıtının adına tıklayıp başka bir aygıta (kulaklık, hoparlör, monitör) geçme. Ekran başına parlaklık (harici monitörlerde DDC/CI, dizüstünde Windows'un kendi ayarı) ve gece ışığı. Wi-Fi ve Bluetooth'u aç/kapa, bağlı ağın adı. Klavyenin ses tuşlarıyla yapılan değişiklikler de görünür.
 - **Hız:** İnternet hız testi: gecikme (ping), titreşim, indirme ve yükleme. Ölçüm Cloudflare'in hız testi sunucularıyla yapılır (anahtar gerekmez), yalnızca **Başlat**'a basınca çalışır ve ~15 saniye sürer; bağlantı hızına göre birkaç yüz MB'a kadar veri kullanabilir. Ada kapanınca test sürer, kompakt adada canlı hız görünür. Son 5 sonuç bu bilgisayarda saklanır.
 - **Bugün:** Tarih ve bu haftanın günleri; hava durumu (anlık sıcaklık, durum, en yüksek/en düşük; Open-Meteo, anahtar gerekmez). Konum için **Konumumu kullan** (Windows konum servisi; yaklaşık 1 km'ye yuvarlanır, hava her yenilendiğinde konum da tazelenir) ya da şehir araması; halkalı odak sayacı ve 15/25/45/60 dakika seçici; günün yapılacakları (tamamlananlar ertesi gün kendiliğinden temizlenir).
@@ -35,7 +36,9 @@ GitHub Actions kurulum dosyasını derleyip **taslak** bir release oluşturur; G
 
 ## Geliştirme
 
-Gerekenler: [Node.js](https://nodejs.org) 20+, [Rust](https://rustup.rs) ve Tauri'nin [platform gereksinimleri](https://tauri.app/start/prerequisites/).
+Gerekenler: [Node.js](https://nodejs.org) 20+, [Rust](https://rustup.rs), [.NET 10 SDK](https://dotnet.microsoft.com/download) (asistan) ve Tauri'nin [platform gereksinimleri](https://tauri.app/start/prerequisites/).
+
+`npm run tauri dev` asistan backend'ini (`assistant/`) `dotnet run` ile kendisi başlatır; ilk açılışta derlendiği için sekme birkaç saniye "Asistan açılıyor…" der.
 
 ```bash
 npm install
@@ -47,7 +50,14 @@ Derleme:
 ```bash
 npm run build                      # tip kontrolü + frontend
 cd src-tauri && cargo build        # Rust tarafı
-npm run tauri build                # kurulum dosyası
+dotnet build assistant             # asistan backend'i
+```
+
+Kurulum dosyası asistanı da içerir; önce backend yayınlanır:
+
+```bash
+dotnet publish assistant -c Release -r win-x64 -o src-tauri/assistant-bin
+npm run tauri build -- --bundles nsis --config src-tauri/tauri.release.conf.json
 ```
 
 ## Claude Code bağlantısı
@@ -94,6 +104,7 @@ src/
     ControlsPanel.vue      Kontrol sekmesi (ses, Wi-Fi, Bluetooth)
     TodayPanel.vue         Bugün sekmesi (tarih, hava durumu, halkalı sayaç, yapılacaklar)
     WeatherGlyph.vue       hava durumu simgeleri
+    AssistantPanel.vue     Asistan sekmesi (sohbet, düşünme anahtarı)
     ClipboardPanel.vue     Pano sekmesi (liste, arama, önizleme)
     SystemPanel.vue        Sistem sekmesi (Ring.vue: yüzde halkası)
     PowerPanel.vue         Güç sekmesi (onaylı düğmeler)
@@ -111,6 +122,7 @@ src/
     useDisplay.ts          parlaklık ve gece ışığı
     useWeather.ts          hava durumu ve şehir arama (Open-Meteo)
     useTodos.ts            yapılacaklar (localStorage)
+    useAssistant.ts        asistan backend'iyle sohbet (akış, durdurma, durum)
   utils/color.ts           kapaktan vurgu rengi
 src-tauri/src/
   lib.rs                   uygulama kurulumu
@@ -129,6 +141,8 @@ src-tauri/src/
   location.rs              cihaz konumu (Windows konum servisi, ~1 km)
   system.rs                işlemci, bellek, uygulamalar, disk, ağ (sysinfo)
   power.rs                 kilitle, uyku, oturumu kapat, yeniden başlat, kapat
+  assistant.rs             asistan backend'ini başlatır/durdurur, anahtarı arayüze verir
+assistant/                 asistan backend'i (.NET 10, port 47822): Ollama ile akışlı sohbet
 docs/ILERLEME.md           fazlar ve geliştirme günlüğü
 ```
 

@@ -26,3 +26,8 @@ dist-ssr
 # Tauri
 src-tauri/target
 src-tauri/gen/schemas
+
+# Asistan (.NET)
+assistant/bin
+assistant/obj
+src-tauri/assistant-bin

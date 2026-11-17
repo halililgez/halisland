@@ -13,7 +13,9 @@ import ClipboardPanel from "./components/ClipboardPanel.vue";
 import TodayPanel from "./components/TodayPanel.vue";
 import ControlsPanel from "./components/ControlsPanel.vue";
 import SpeedPanel from "./components/SpeedPanel.vue";
+import AssistantPanel from "./components/AssistantPanel.vue";
 import { useSpeedTest } from "./composables/useSpeedTest";
+import { useAssistant } from "./composables/useAssistant";
 import { useClipboard } from "./composables/useClipboard";
 import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
@@ -57,9 +59,12 @@ const focusColor = computed(() =>
 );
 
 /** Açık adanın sekmeleri. Ayarlar sekme değil, dişliyle açılan ayrı sayfa. */
-type Tab = "main" | "today" | "controls" | "speed" | "clipboard" | "system" | "power";
+type Tab = "main" | "assistant" | "today" | "controls" | "speed" | "clipboard" | "system" | "power";
+/** Asistan şimdilik yalnızca Windows'ta (backend orada başlatılıyor). */
+const HAS_ASSISTANT = navigator.userAgent.includes("Windows");
 const TABS: { id: Tab; label: string }[] = [
   { id: "main", label: "Ana" },
+  ...(HAS_ASSISTANT ? [{ id: "assistant" as const, label: "Asistan" }] : []),
   { id: "today", label: "Bugün" },
   { id: "controls", label: "Kontrol" },
   { id: "speed", label: "Hız" },
@@ -98,6 +103,15 @@ const speedLabel = computed(() => {
   return `${p === "upload" ? "↑" : "↓"}${v >= 100 ? Math.round(v) : v.toFixed(1)}`;
 });
 
+/** Asistan burada tutulur: ada kapanınca sohbet ve süren cevap kaybolmasın. */
+const assistantActive = computed(() => island.expanded.value && isActive("assistant"));
+const assistant = useAssistant(assistantActive);
+// Sohbet 200 px'e sığmıyor: Asistan sekmesinde ada aşağı (altta yukarı) uzar.
+watch(
+  () => isActive("assistant"),
+  (on) => (island.wantTall.value = on),
+);
+
 /** Pano geçmişi; liste yalnızca sekme görünürken yenilenir. */
 const clip = useClipboard(computed(() => island.expanded.value && isActive("clipboard")));
 
@@ -121,7 +135,9 @@ const drag = computed(() =>
 );
 
 const islandStyle = computed(() => {
-  const size = island.expanded.value ? expandedSize(edge.value) : compactSize(edge.value);
+  const size = island.expanded.value
+    ? expandedSize(edge.value, island.tall.value)
+    : compactSize(edge.value);
   return {
     width: `${size.width}px`,
     height: `${size.height}px`,
@@ -159,6 +175,9 @@ const islandStyle = computed(() => {
       </span>
       <span v-else class="compact-time mono" v-bind="drag">{{ time }}</span>
       <span v-if="speed.running.value" class="compact-focus compact-speed mono">{{ speedLabel }}</span>
+      <span v-else-if="assistant.busy.value" class="compact-focus compact-assistant" title="Asistan yazıyor">
+        <i /><i /><i />
+      </span>
       <span v-else-if="focusActive" class="compact-focus mono">{{ focus.label.value }}</span>
       <span v-else-if="media.state.value.playing" class="eq" aria-hidden="true">
         <i /><i /><i /><i />
@@ -294,6 +313,14 @@ const islandStyle = computed(() => {
           />
         </Tile>
       </div>
+
+      <AssistantPanel
+        v-if="HAS_ASSISTANT"
+        class="page"
+        :inert="!isActive('assistant')"
+        :active="assistantActive"
+        :assistant="assistant"
+      />
 
       <TodayPanel
         class="page"
@@ -507,6 +534,41 @@ const islandStyle = computed(() => {
   color: var(--c-done);
 }
 
+/* Asistan cevap yazarken kompakt adada üç nokta. */
+.compact-assistant {
+  display: flex;
+  gap: 3px;
+}
+
+.compact-assistant i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--c-focus);
+  animation: typing 1.2s ease-in-out infinite;
+}
+
+.compact-assistant i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.compact-assistant i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
 /* Sağ ve sol kenarda dikey kompakt ada: üstte durum, ortada saat (saat ve
    dakika alt alta), altta odak sayacı ya da ekolayzır. */
 .island.vertical .compact {
@@ -545,8 +607,14 @@ const islandStyle = computed(() => {
   justify-self: center;
 }
 
+/* Dikey adada sekme şeridi 360 px'e sığmalı (iç genişlik 332 px, şeridin
+   kenar boşluğu ve çerçevesi düşülünce 326 px): sekme sayısı arttıkça daralır. */
 .island.vertical .tabs {
-  --tab-w: 46px;
+  --tab-w: min(46px, calc(326px / var(--tab-count)));
+}
+
+.island.vertical .tabs button {
+  font-size: 10px;
 }
 
 .island.vertical .track > .page {
