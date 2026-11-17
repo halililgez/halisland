@@ -112,14 +112,23 @@ pub fn start_frame_guard(app: AppHandle) {
 mod platform {
     use super::GlassMode;
     use std::ffi::c_void;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use tauri::WebviewWindow;
-    use windows::Win32::Foundation::{HWND, HMODULE};
-    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+    use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Graphics::Dwm::{
+        DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+        DwmSetWindowAttribute,
+    };
+    use windows::Win32::Graphics::Gdi::{
+        CreateRoundRectRgn, RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RedrawWindow,
+        SetWindowRgn,
+    };
     use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
         GWL_STYLE, GetWindowLongPtrW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WINDOW_STYLE, WS_CAPTION, WS_MAXIMIZEBOX,
-        WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WINDOW_STYLE, WM_NCACTIVATE, WM_NCPAINT,
+        WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
     use windows::core::{BOOL, s, w};
 
@@ -208,10 +217,11 @@ mod platform {
             .is_ok_and(|hwnd| style(hwnd) & FRAME != WINDOW_STYLE(0))
     }
 
-    fn strip_frame(hwnd: HWND) {
+    /// Çerçeve stillerini kaldırır; bir şey değiştiyse `true`.
+    fn strip_frame(hwnd: HWND) -> bool {
         let style = style(hwnd);
         if style & FRAME == WINDOW_STYLE(0) {
-            return;
+            return false;
         }
         unsafe {
             let next = (style & !FRAME) | WS_POPUP;
@@ -226,16 +236,85 @@ mod platform {
                 SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
             );
         }
+        true
+    }
+
+    const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
+    const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
+
+    /// Pencere mesajlarının arasına girer (C#'taki `WndProc` override'ı gibi).
+    ///
+    /// Stil temiz olsa bile pencere etkinleşince (tıklama, sağ tık menüsü)
+    /// Windows'un varsayılan işleyicisi "başlık alanını" pencerenin üstüne
+    /// boyuyor; adanın üstünde "Halisland" yazan gri bir şerit kalıyordu.
+    /// Çerçeve/başlık çizim mesajlarını yutuyoruz.
+    unsafe extern "system" fn subclass_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        _id: usize,
+        _data: usize,
+    ) -> LRESULT {
+        unsafe {
+            match msg {
+                // lParam = -1: etkinlik durumu değişsin ama çerçeve yeniden çizilmesin.
+                WM_NCACTIVATE => DefSubclassProc(hwnd, msg, wparam, LPARAM(-1)),
+                WM_NCPAINT | WM_NCUAHDRAWCAPTION | WM_NCUAHDRAWFRAME => LRESULT(0),
+                _ => DefSubclassProc(hwnd, msg, wparam, lparam),
+            }
+        }
+    }
+
+    static PREPARED: AtomicBool = AtomicBool::new(false);
+
+    /// Bir kez: mesaj yakalayıcıyı kur, Windows 11'in kendi kenarlığını ve
+    /// köşe yuvarlamasını kapat (bölgeyle çakışıp adanın arkasında çerçeve
+    /// gibi görünüyordu).
+    fn prepare(hwnd: HWND) {
+        if PREPARED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        unsafe {
+            let _ = SetWindowSubclass(hwnd, Some(subclass_proc), 1, 0);
+            let no_round = DWMWCP_DONOTROUND;
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &no_round as *const _ as *const c_void,
+                std::mem::size_of_val(&no_round) as u32,
+            );
+            // DWMWA_COLOR_NONE: kenarlık çizme.
+            let no_border: u32 = 0xFFFF_FFFE;
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_BORDER_COLOR,
+                &no_border as *const _ as *const c_void,
+                4,
+            );
+        }
     }
 
     pub fn set_region(window: &WebviewWindow, x: i32, y: i32, w: i32, h: i32, r: i32) {
         let Ok(hwnd) = window.hwnd() else { return };
-        strip_frame(hwnd);
+        prepare(hwnd);
+        let stripped = strip_frame(hwnd);
         unsafe {
-            // Sağ/alt kenar bölgeye dahil değil, o yüzden +1.
-            let rgn = CreateRoundRectRgn(x, y, x + w + 1, y + h + 1, r * 2, r * 2);
+            // Sağ/alt kenar bölgeye dahil değil; x + w tam w piksel eder.
+            // (Eskiden +1 vardı, bölge adadan 1 piksel taşıyor ve sağda/altta
+            // koyu bir cam şeridi bırakıyordu.)
+            let rgn = CreateRoundRectRgn(x, y, x + w, y + h, r * 2, r * 2);
             // Başarılı olursa bölgenin sahibi sistem olur; silmiyoruz.
             SetWindowRgn(hwnd, Some(rgn), true);
+            if stripped {
+                // Daha önce boyanmış başlık kalıntısını temizle.
+                let _ = RedrawWindow(
+                    Some(hwnd),
+                    None,
+                    None,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN,
+                );
+            }
         }
     }
 
