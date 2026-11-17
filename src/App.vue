@@ -17,7 +17,7 @@ import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
 import { useFocusTimer } from "./composables/useFocusTimer";
 import { useClaudeStatus, type ClaudeState } from "./composables/useClaudeStatus";
-import { EXPANDED, compactSize, isVertical, useIsland } from "./composables/useIsland";
+import { compactSize, expandedSize, isVertical, useIsland } from "./composables/useIsland";
 import { useMedia } from "./composables/useMedia";
 
 const settings = useSettings();
@@ -108,7 +108,7 @@ const drag = computed(() =>
 );
 
 const islandStyle = computed(() => {
-  const size = island.expanded.value ? EXPANDED : compactSize(edge.value);
+  const size = island.expanded.value ? expandedSize(edge.value) : compactSize(edge.value);
   return {
     width: `${size.width}px`,
     height: `${size.height}px`,
@@ -509,6 +509,46 @@ const islandStyle = computed(() => {
 
 .island.vertical .compact-focus {
   font-size: 10px;
+}
+
+/* Sağ ve sol kenarda açık ada dikey: başlıkta sekmeler ikinci satıra iner,
+   her sayfanın kutucukları alt alta dizilir. Sayfa bileşenlerinin kök
+   öğesi (.page) bu bileşenin kapsamlı stiline de dahildir. */
+.island.vertical .header {
+  grid-template-columns: 1fr auto;
+  row-gap: 8px;
+}
+
+.island.vertical .header > :nth-child(2) {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+
+.island.vertical .tabs {
+  --tab-w: 52px;
+}
+
+.island.vertical .track > .page {
+  flex-direction: column;
+}
+
+.island.vertical .track > .page > :deep(*) {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* Güç düğmeleri dikeyde alt alta; simge ve yazı yan yana. */
+.island.vertical :deep(.power .buttons) {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.island.vertical :deep(.power-btn) {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 18px;
 }
 
 .stacked {

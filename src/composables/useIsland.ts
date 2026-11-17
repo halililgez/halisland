@@ -7,9 +7,12 @@ export const COMPACT = { width: 320, height: 44 };
 /** Sağ ve sol kenarda kompakt ada dikeydir. */
 export const COMPACT_VERTICAL = { width: 44, height: 320 };
 export const EXPANDED = { width: 720, height: 200 };
+/** Sağ ve sol kenarda açık ada da dikeydir; kutucuklar alt alta dizilir. */
+export const EXPANDED_VERTICAL = { width: 360, height: 600 };
 
 export const isVertical = (edge: Edge) => edge === "left" || edge === "right";
 export const compactSize = (edge: Edge) => (isVertical(edge) ? COMPACT_VERTICAL : COMPACT);
+export const expandedSize = (edge: Edge) => (isVertical(edge) ? EXPANDED_VERTICAL : EXPANDED);
 
 /** CSS geçiş süresiyle aynı olmalı (App.vue → .island transition). */
 const TRANSITION_MS = 380;
@@ -29,16 +32,13 @@ export function useIsland(edge: Ref<Edge>, onExpand?: () => void) {
   /** Açılış/kapanış sırasında pencere küçültmesi. */
   let settle: number | undefined;
 
-  // Dikey kompakt ada (44x320) açık adadan (720x200) daha uzun. Geçiş
-  // boyunca ada kırpılmasın diye pencere ikisini de kapsayacak boyuta
-  // getirilir, animasyon bitince hedef boyuta indirilir. Üst ve altta bu
-  // zaten açık boyuttur.
+  // Geçiş boyunca ada kırpılmasın diye pencere kompakt ve açık boyutu
+  // birlikte kapsayacak boyuta getirilir, animasyon bitince hedef boyuta
+  // indirilir. Bugünkü boyutlarda bu her kenarda açık boyuta eşittir.
   const union = () => {
     const c = compactSize(edge.value);
-    return {
-      width: Math.max(c.width, EXPANDED.width),
-      height: Math.max(c.height, EXPANDED.height),
-    };
+    const e = expandedSize(edge.value);
+    return { width: Math.max(c.width, e.width), height: Math.max(c.height, e.height) };
   };
 
   function clearSettle() {
@@ -46,9 +46,10 @@ export function useIsland(edge: Ref<Edge>, onExpand?: () => void) {
     settle = undefined;
   }
 
-  // Kenar değişince (ayar ya da tepsi menüsü) kompakt adanın yönü değişir.
+  // Kenar değişince (ayar ya da tepsi menüsü) adanın yönü değişir.
   watch(edge, () => {
-    if (!expanded.value && pending === undefined) resize(compactSize(edge.value));
+    if (pending !== undefined) return;
+    resize(expanded.value ? expandedSize(edge.value) : compactSize(edge.value));
   });
 
   // Güvenlik ağı: WebView bazen fare gerçekten üstünde değilken `mouseenter`
@@ -81,7 +82,7 @@ export function useIsland(edge: Ref<Edge>, onExpand?: () => void) {
     onExpand?.();
     settle = window.setTimeout(() => {
       settle = undefined;
-      if (expanded.value) resize(EXPANDED);
+      if (expanded.value) resize(expandedSize(edge.value));
     }, TRANSITION_MS);
   }
 
