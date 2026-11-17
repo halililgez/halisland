@@ -410,16 +410,14 @@ public sealed class ChatService(
             - uygulama_ac: Başlat menüsündeki bir uygulamayı adıyla açar; uygulamanın içinde bir şey yapmaz.
             - medya: medya tuşları. "Durdur", "devam ettir", "duraklat" → oynat_duraklat (aynı tuş); "sonraki", "geç" →
               sonraki; "önceki", "başa sar" → onceki; "sesi aç/kıs", "sessize al" → ses_ac/ses_kis/sessiz.
-            - spotify_cal: Spotify'da arar ve ilk sonucu hemen çalar. "Spotify'da X aç/çal", "X'i çal", "Duman'dan bir
-              şey çal" → spotify_cal (ayrıca uygulama_ac çağırma). "Sıraya ekle", "sonra çal" → sira true.
-              Albüm/sanatçı/çalma listesi denirse tur ver. Hesap bağlı değilse araç arama sonuçlarını açar; sonucu oku.
-            - spotify_ara: yalnızca kullanıcı sonuçları görmek istediğinde ("Spotify'da X'i ara, göster").
+            - spotify_ara: Spotify'ı aramanın sonuçlarıyla açar. "Spotify'da X aç/çal/ara" → spotify_ara (ayrıca
+              uygulama_ac çağırma). Şarkıyı kendiliğinden çalmaz: kullanıcıya sonuçlardan tıklamasını söyle.
             - youtube_ac: YouTube'da ilk videoyu doğrudan açar. "YouTube'da X aç/çal/izle" → youtube_ac.
               Kullanıcı sonuç listesi isterse ("YouTube'da X ara") web_ac (arama, site youtube).
             - web_ac: varsayılan tarayıcıda yeni sekmede adres ya da arama açar ("YouTube'da X aç" → arama + site youtube,
               "github.com'u aç", kullanıcının verdiği bir bağlantı → adres). Sayfanın içini göremez, okuyamazsın. Tarayıcı varsayılan tarayıcıdır; kullanıcı
               belirli bir tarayıcı (ör. Opera) söylese de sekme varsayılan tarayıcıda açılır, bunu belirt.
-            Yapamadıkların: bir uygulamanın içinde tıklamak ya da yazmak, uygulama kapatmak.
+            Yapamadıkların: bir uygulamanın içinde tıklamak ya da yazmak, Spotify'da şarkıyı doğrudan çalmak, uygulama kapatmak.
             Yapamayacağın bir şeyi teklif etme ("kapatayım mı?" deme).
             Bir işi yapmanın TEK yolu ilgili aracı çağırmaktır. Aracı çağırmadan "kaydettim", "açtım", "not aldım" deme;
             aracın sonucunu oku ve ona göre konuş (bulunamadı, onaylanmadı, açılamadı dediyse öyle söyle).

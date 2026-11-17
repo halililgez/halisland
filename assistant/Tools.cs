@@ -16,10 +16,10 @@ public sealed record ToolResult(string ForModel, string ForUser, bool Ok = true)
 /// Modelin çağırabildiği araçlar (her sağlayıcı kendi biçimine çevirir).
 /// Faz 22: hafıza (hatirla). Faz 25: dosya arama/açma, uygulama açma, notlar,
 /// medya tuşları, Spotify'da arama, tarayıcıda adres/arama açma.
-/// Faz 26: Spotify'da doğrudan çalma (Web API), YouTube'da ilk videoyu açma.
+/// Faz 26: YouTube'da ilk videoyu açma.
 /// Riskli olan (dosya açma) kullanıcıya sorulur; bkz. <see cref="Confirmations"/>.
 /// </summary>
-public sealed class ToolRegistry(Store store, Confirmations confirmations, DesktopTools desktop, SpotifyService spotify)
+public sealed class ToolRegistry(Store store, Confirmations confirmations, DesktopTools desktop)
 {
     public const int MaxMemoryLength = 300;
 
@@ -66,13 +66,6 @@ public sealed class ToolRegistry(Store store, Confirmations confirmations, Deskt
             "Müziği durdurmak ya da sürdürmek için oynat_duraklat (aynı tuş), sonraki/önceki parça, ses açma/kısma, sessiz.",
             """
             {"type":"object","properties":{"islem":{"type":"string","enum":["oynat_duraklat","sonraki","onceki","ses_ac","ses_kis","sessiz"]},"adim":{"type":"integer","description":"Yalnızca ses_ac/ses_kis için; her adım yaklaşık %2, varsayılan 5"}},"required":["islem"]}
-            """),
-        Tool(
-            "spotify_cal",
-            "Spotify'da arar ve ilk sonucu hemen çalar (ya da şarkıyı sıraya ekler). Kullanıcının Spotify hesabı " +
-            "bağlı değilse arama sonuçlarını açar.",
-            """
-            {"type":"object","properties":{"sorgu":{"type":"string","description":"Ör. 'Hergele İyi Uykular' ya da 'Duman'"},"tur":{"type":"string","enum":["sarki","album","sanatci","calma_listesi"],"description":"Varsayılan sarki; kullanıcı albüm, sanatçı ya da çalma listesi dediyse onu ver"},"sira":{"type":"boolean","description":"true: hemen çalma, sıraya ekle (yalnızca şarkı)"}},"required":["sorgu"]}
             """),
         Tool(
             "youtube_ac",
@@ -129,7 +122,6 @@ public sealed class ToolRegistry(Store store, Confirmations confirmations, Deskt
                 "uygulama_ac" => await desktop.OpenAppAsync(GetString(args, "ad"), ct),
                 "medya" => desktop.Media(GetString(args, "islem"), GetString(args, "adim")),
                 "spotify_ara" => desktop.SpotifySearch(GetString(args, "sorgu")),
-                "spotify_cal" => await PlaySpotifyAsync(args, ct),
                 "youtube_ac" => await desktop.YouTubeAsync(GetString(args, "sorgu"), ct),
                 "web_ac" => desktop.OpenWeb(GetString(args, "adres"), GetString(args, "arama"), GetString(args, "site")),
                 "not_al" => desktop.AddNote(GetString(args, "metin")),
@@ -143,29 +135,6 @@ public sealed class ToolRegistry(Store store, Confirmations confirmations, Deskt
         {
             return ToolResult.Fail($"Araç çalışmadı: {e.Message}", "Araç çalışmadı");
         }
-    }
-
-    private async Task<ToolResult> PlaySpotifyAsync(JsonElement args, CancellationToken ct)
-    {
-        var query = GetString(args, "sorgu");
-        var queue = string.Equals(GetString(args, "sira"), "true", StringComparison.OrdinalIgnoreCase);
-        try
-        {
-            if (await spotify.PlayAsync(query, GetString(args, "tur"), queue, ct) is { } played) return played;
-        }
-        catch (HttpRequestException e)
-        {
-            return ToolResult.Fail($"Spotify'a ulaşılamadı: {e.Message}", "Spotify'a ulaşılamadı");
-        }
-        // Hesap bağlı değil: arama sonuçları açılır.
-        var search = desktop.SpotifySearch(query);
-        return search.Ok
-            ? new ToolResult(
-                search.ForModel + " Spotify hesabı Halisland'e bağlı olmadığı için doğrudan çalınamadı; kullanıcıya " +
-                "sonuçlardan tıklamasını, doğrudan çalma için Asistan > Model ekranındaki Spotify bölümünden hesabını " +
-                "bağlayabileceğini söyle.",
-                search.ForUser)
-            : search;
     }
 
     private async Task<ToolResult> OpenFileAsync(string? path, Func<StreamEvent, Task> write, CancellationToken ct)
