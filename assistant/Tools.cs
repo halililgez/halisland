@@ -16,6 +16,7 @@ public sealed record ToolResult(string ForModel, string ForUser, bool Ok = true)
 /// Modelin çağırabildiği araçlar (her sağlayıcı kendi biçimine çevirir).
 /// Faz 22: hafıza (hatirla). Faz 25: dosya arama/açma, uygulama açma, notlar,
 /// medya tuşları, Spotify'da arama, tarayıcıda adres/arama açma.
+/// Faz 26: YouTube'da ilk videoyu açma.
 /// Riskli olan (dosya açma) kullanıcıya sorulur; bkz. <see cref="Confirmations"/>.
 /// </summary>
 public sealed class ToolRegistry(Store store, Confirmations confirmations, DesktopTools desktop)
@@ -67,6 +68,12 @@ public sealed class ToolRegistry(Store store, Confirmations confirmations, Deskt
             {"type":"object","properties":{"islem":{"type":"string","enum":["oynat_duraklat","sonraki","onceki","ses_ac","ses_kis","sessiz"]},"adim":{"type":"integer","description":"Yalnızca ses_ac/ses_kis için; her adım yaklaşık %2, varsayılan 5"}},"required":["islem"]}
             """),
         Tool(
+            "youtube_ac",
+            "YouTube'da arar ve ilk videoyu tarayıcıda doğrudan açar (kendiliğinden başlar).",
+            """
+            {"type":"object","properties":{"sorgu":{"type":"string","description":"Ör. 'lofi hip hop' ya da 'Hergele İyi Uykular klip'"}},"required":["sorgu"]}
+            """),
+        Tool(
             "spotify_ara",
             "Spotify'ı verilen aramanın sonuçlarıyla açar (şarkı, sanatçı, albüm). Şarkıyı kendiliğinden çalmaz; " +
             "kullanıcı sonuçlardan tıklar.",
@@ -115,6 +122,7 @@ public sealed class ToolRegistry(Store store, Confirmations confirmations, Deskt
                 "uygulama_ac" => await desktop.OpenAppAsync(GetString(args, "ad"), ct),
                 "medya" => desktop.Media(GetString(args, "islem"), GetString(args, "adim")),
                 "spotify_ara" => desktop.SpotifySearch(GetString(args, "sorgu")),
+                "youtube_ac" => await desktop.YouTubeAsync(GetString(args, "sorgu"), ct),
                 "web_ac" => desktop.OpenWeb(GetString(args, "adres"), GetString(args, "arama"), GetString(args, "site")),
                 "not_al" => desktop.AddNote(GetString(args, "metin")),
                 "notlari_oku" => desktop.ReadNotes(),
