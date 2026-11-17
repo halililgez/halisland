@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useGlass } from "./composables/useGlass";
 import { useSettings } from "./composables/useSettings";
 import Tile from "./components/Tile.vue";
 import MusicTile from "./components/MusicTile.vue";
 import ClaudeTile from "./components/ClaudeTile.vue";
+import SettingsPanel from "./components/SettingsPanel.vue";
 import { useClock } from "./composables/useClock";
 import { useFocusTimer } from "./composables/useFocusTimer";
 import { useClaudeStatus, type ClaudeState } from "./composables/useClaudeStatus";
@@ -44,9 +45,33 @@ const focusColor = computed(() =>
     : undefined,
 );
 
-/** Ayar menüsü (tepsi menüsünün aynısı) imlecin olduğu yerde açılır. */
-function openMenu() {
-  invoke("open_menu").catch((e) => console.error("open_menu", e));
+/** Açık adada gösterilen sayfa: kutucuklar ya da ayarlar. */
+const view = ref<"main" | "settings">("main");
+// Ada kapanınca bir dahaki açılışta kutucuklarla başlasın.
+watch(island.expanded, (open) => {
+  if (!open) view.value = "main";
+});
+
+/** Sağ tık: ayarları adanın içinde açar. Dişli: ayarlar ↔ kutucuklar. */
+async function openSettings() {
+  await island.expand();
+  view.value = "settings";
+}
+
+function toggleSettings() {
+  view.value = view.value === "settings" ? "main" : "settings";
+}
+
+function settingsAction(id: string) {
+  const run = () =>
+    invoke("settings_action", { id }).catch((e) => console.error("settings_action", e));
+  if (id === "toggle") {
+    // Önce ada kapansın; yoksa tepsiden geri açılınca açık hâlde gelir.
+    island.collapse();
+    window.setTimeout(run, 450);
+  } else {
+    run();
+  }
 }
 
 const islandStyle = computed(() => {
@@ -67,7 +92,7 @@ const islandStyle = computed(() => {
     :style="islandStyle"
     @mouseenter="island.hoverIn"
     @mouseleave="island.hoverOut"
-    @contextmenu.prevent="openMenu"
+    @contextmenu.prevent="openSettings"
   >
     <!-- Kompakt görünüm -->
     <div v-if="!island.expanded.value" class="compact" data-tauri-drag-region>
@@ -90,11 +115,35 @@ const islandStyle = computed(() => {
     <!-- Genişletilmiş görünüm -->
     <div v-else class="expanded-view">
       <header class="header" data-tauri-drag-region>
-        <span class="mono" data-tauri-drag-region>{{ date }}</span>
+        <button v-if="view === 'settings'" class="back" @click="view = 'main'">
+          <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+            <path
+              d="M15 5l-7 7 7 7"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Ayarlar
+        </button>
+        <span v-else class="mono" data-tauri-drag-region>{{ date }}</span>
         <span class="brand" data-tauri-drag-region>Halisland</span>
         <span class="header-right" data-tauri-drag-region>
-          <span class="mono" data-tauri-drag-region>{{ time }}</span>
-          <button class="gear" title="Ayarlar" aria-label="Ayarlar" @click="openMenu">
+          <template v-if="view === 'settings'">
+            <button class="chip" @click="settingsAction('reset-position')">Konumu sıfırla</button>
+            <button class="chip" @click="settingsAction('toggle')">Gizle</button>
+            <button class="chip danger" @click="settingsAction('quit')">Çıkış</button>
+          </template>
+          <span v-else class="mono" data-tauri-drag-region>{{ time }}</span>
+          <button
+            class="gear"
+            :class="{ active: view === 'settings' }"
+            title="Ayarlar"
+            aria-label="Ayarlar"
+            @click="toggleSettings"
+          >
             <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
               <path
                 fill="currentColor"
@@ -106,7 +155,10 @@ const islandStyle = computed(() => {
         </span>
       </header>
 
-      <div class="tiles">
+      <!-- Kayan sayfalar: kutucuklar ↔ ayarlar -->
+      <div class="pages">
+      <div class="track" :class="{ 'show-settings': view === 'settings' }">
+      <div class="tiles page" :inert="view === 'settings'">
         <Tile
           class="music-tile"
           title="Müzik"
@@ -150,6 +202,15 @@ const islandStyle = computed(() => {
             @focus="claude.focusTerminal"
           />
         </Tile>
+      </div>
+
+      <SettingsPanel
+        class="page"
+        :inert="view !== 'settings'"
+        :settings="settings"
+        :claude-connected="claude.connected.value"
+      />
+      </div>
       </div>
     </div>
   </div>
@@ -323,9 +384,83 @@ const islandStyle = computed(() => {
     color 0.2s ease;
 }
 
-.gear:hover {
+.gear:hover,
+.gear.active {
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
+}
+
+.gear svg {
+  transition: transform 0.4s var(--ease);
+}
+
+.gear.active svg {
+  transform: rotate(60deg);
+}
+
+/* Kayan sayfalar. Kutucukların dış parıltısı kırpılmasın diye alan adanın
+   iç boşluğuna taşar; sayfalar da adanın kenarına kadar kayar. */
+.pages {
+  --page-gap: 28px;
+  flex: 1;
+  min-height: 0;
+  margin: -10px -14px -14px;
+  padding: 10px 14px 14px;
+  overflow: hidden;
+}
+
+.track {
+  height: 100%;
+  display: flex;
+  gap: var(--page-gap);
+  transition: transform 0.45s var(--ease);
+}
+
+.track.show-settings {
+  transform: translateX(calc(-100% - var(--page-gap)));
+}
+
+.track > .page {
+  flex: 0 0 100%;
+  height: 100%;
+  transition:
+    opacity 0.35s ease,
+    filter 0.35s ease;
+}
+
+.track > .page[inert] {
+  opacity: 0;
+  filter: blur(4px);
+}
+
+.back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -4px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.back:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.header .chip {
+  padding: 2px 9px;
+  color: var(--text-dim);
+}
+
+.header .chip:hover {
+  color: var(--text);
+}
+
+.header .chip.danger:hover {
+  background: rgba(255, 90, 90, 0.2);
+  color: #ff8a8a;
 }
 
 .brand {

@@ -1,15 +1,17 @@
 //! Tepsi (tray) simgesi ve menüsü: ayarlar, adayı gizle/göster, çıkış.
 //!
-//! Aynı menü adaya sağ tıklayınca ya da açık adadaki dişli düğmesiyle de
-//! açılır (`open_menu`). Windows 11 tepsi simgesini çoğunlukla `^` taşma
-//! alanına sakladığı için ayarlara yalnızca tepsiden ulaşmak zor.
+//! Adanın kendi ayar paneli (sağ tık / dişli, `SettingsPanel.vue`) aynı
+//! işlemleri `settings_action` komutuyla, menü kimlikleri üzerinden yapar.
+//! Yerel açılır menü (`popup_menu`) adada kullanılmaz: tasarıma uymuyordu ve
+//! açıkken ana iş parçacığını kilitlediği için ada küçülürken pencere ve
+//! bulanıklık eski (açık) boyutta kalıyordu.
 
 use crate::glass::GlassMode;
 use crate::settings::{self, FOCUS_CHOICES, Settings};
 use std::sync::Mutex;
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, WebviewWindow, Wry};
+use tauri::{AppHandle, Manager, Wry};
 
 const GLASS_CHOICES: [(GlassMode, &str, &str); 3] = [
     (GlassMode::Acrylic, "glass-acrylic", "Buzlu cam"),
@@ -25,7 +27,6 @@ pub struct TrayItems {
     autostart: CheckMenuItem<Wry>,
     claude: CheckMenuItem<Wry>,
     toggle: MenuItem<Wry>,
-    menu: Menu<Wry>,
 }
 
 pub struct TrayState(Mutex<Option<TrayItems>>);
@@ -121,13 +122,16 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         autostart,
         claude,
         toggle,
-        menu,
     }))));
     Ok(())
 }
 
 fn on_menu_event(app: &AppHandle, event: MenuEvent) {
-    let id = event.id().as_ref();
+    handle(app, event.id().as_ref());
+}
+
+/// Menü kimliğine göre işlemi yapar (tepsi menüsü ve adanın ayar paneli).
+fn handle(app: &AppHandle, id: &str) {
     match id {
         "quit" => app.exit(0),
         "toggle" => toggle_window(app),
@@ -155,20 +159,12 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     }
 }
 
-/// Ayar menüsünü imlecin olduğu yerde açar (sağ tık / dişli düğmesi).
+/// Adanın ayar panelinden gelen işlem. Kimlikler tepsi menüsündekilerle
+/// aynıdır: `toggle`, `reset-position`, `tint`, `claude-hooks`, `autostart`,
+/// `quit`, `focus-<dakika>`, `glass-<mod>`.
 #[tauri::command]
-pub fn open_menu(app: AppHandle, window: WebviewWindow) {
-    let Some(state) = app.try_state::<TrayState>() else { return };
-    let menu = {
-        let guard = state.0.lock().unwrap();
-        let Some(items) = &*guard else { return };
-        // settings.json elle değiştirilmiş olabilir; onay işaretini tazele.
-        let _ = items
-            .claude
-            .set_checked(crate::hooks::claude_hooks_installed(app.clone()));
-        items.menu.clone()
-    };
-    let _ = window.popup_menu(&menu);
+pub fn settings_action(app: AppHandle, id: String) {
+    handle(&app, &id);
 }
 
 fn toggle_window(app: &AppHandle) {

@@ -82,6 +82,12 @@ pub fn blur_supported() -> bool {
     platform::blur_supported()
 }
 
+/// Ayar paneli "Cam efekti" seçeneğini buna göre etkin ya da pasif gösterir.
+#[tauri::command]
+pub fn glass_supported() -> bool {
+    blur_supported()
+}
+
 /// Cam efektini açar/kapatır. Bulanıklık gerçekten açıldıysa `true` döner.
 #[tauri::command]
 pub fn set_glass(window: WebviewWindow, mode: GlassMode) -> bool {
