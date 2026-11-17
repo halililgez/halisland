@@ -5,7 +5,9 @@ mod glass;
 mod hooks;
 mod island;
 mod media;
+mod power;
 mod settings;
+mod system;
 mod terminal;
 mod tray;
 
@@ -25,6 +27,7 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .manage(glass::GlassState::default())
         .manage(claude::ClaudeStore::default())
+        .manage(system::SystemMonitor::default())
         .invoke_handler(tauri::generate_handler![
             claude::focus_claude,
             claude::claude_status,
@@ -36,7 +39,9 @@ pub fn run() {
             hooks::claude_hooks_installed,
             media::media_control,
             media::media_artwork,
+            power::power_action,
             settings::get_settings,
+            system::system_stats,
             tray::settings_action
         ])
         .on_window_event(|window, event| {

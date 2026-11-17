@@ -7,6 +7,9 @@ import Tile from "./components/Tile.vue";
 import MusicTile from "./components/MusicTile.vue";
 import ClaudeTile from "./components/ClaudeTile.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import SystemPanel from "./components/SystemPanel.vue";
+import PowerPanel from "./components/PowerPanel.vue";
+import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
 import { useFocusTimer } from "./composables/useFocusTimer";
 import { useClaudeStatus, type ClaudeState } from "./composables/useClaudeStatus";
@@ -45,21 +48,42 @@ const focusColor = computed(() =>
     : undefined,
 );
 
-/** Açık adada gösterilen sayfa: kutucuklar ya da ayarlar. */
-const view = ref<"main" | "settings">("main");
-// Ada kapanınca bir dahaki açılışta kutucuklarla başlasın.
+/** Açık adanın sekmeleri. Ayarlar sekme değil, dişliyle açılan ayrı sayfa. */
+type Tab = "main" | "system" | "power";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "main", label: "Ana" },
+  { id: "system", label: "Sistem" },
+  { id: "power", label: "Güç" },
+];
+const tab = ref<Tab>("main");
+const settingsOpen = ref(false);
+/** Kayan şeritteki sıra: sekmeler, en sağda ayarlar. */
+const pageIndex = computed(() =>
+  settingsOpen.value ? TABS.length : TABS.findIndex((t) => t.id === tab.value),
+);
+const isActive = (t: Tab) => !settingsOpen.value && tab.value === t;
+
+// Ada kapanınca bir dahaki açılışta ana sekmeyle başlasın.
 watch(island.expanded, (open) => {
-  if (!open) view.value = "main";
+  if (!open) {
+    settingsOpen.value = false;
+    tab.value = "main";
+  }
 });
 
-/** Sağ tık: ayarları adanın içinde açar. Dişli: ayarlar ↔ kutucuklar. */
+/** Sistem ölçümleri yalnızca sekme görünürken yapılır. */
+const systemStats = useSystemStats(
+  computed(() => island.expanded.value && isActive("system")),
+);
+
+/** Sağ tık: ayarları adanın içinde açar. Dişli: ayarlar ↔ sekmeler. */
 async function openSettings() {
   await island.expand();
-  view.value = "settings";
+  settingsOpen.value = true;
 }
 
 function toggleSettings() {
-  view.value = view.value === "settings" ? "main" : "settings";
+  settingsOpen.value = !settingsOpen.value;
 }
 
 function settingsAction(id: string) {
@@ -112,7 +136,7 @@ const islandStyle = computed(() => {
     <!-- Genişletilmiş görünüm -->
     <div v-else class="expanded-view">
       <header class="header" v-bind="drag">
-        <button v-if="view === 'settings'" class="back" @click="view = 'main'">
+        <button v-if="settingsOpen" class="back" @click="settingsOpen = false">
           <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
             <path
               d="M15 5l-7 7 7 7"
@@ -125,10 +149,28 @@ const islandStyle = computed(() => {
           </svg>
           Ayarlar
         </button>
-        <span v-else class="mono" v-bind="drag">{{ date }}</span>
-        <span class="brand" v-bind="drag">Halisland</span>
+        <span v-else class="mono header-left" v-bind="drag">{{ date }}</span>
+        <span v-if="settingsOpen" class="brand" v-bind="drag">Halisland</span>
+        <nav
+          v-else
+          class="tabs"
+          role="tablist"
+          :style="{ '--tab-index': pageIndex, '--tab-count': TABS.length }"
+        >
+          <span class="tab-pill" aria-hidden="true" />
+          <button
+            v-for="t in TABS"
+            :key="t.id"
+            role="tab"
+            :aria-selected="tab === t.id"
+            :class="{ active: tab === t.id }"
+            @click="tab = t.id"
+          >
+            {{ t.label }}
+          </button>
+        </nav>
         <span class="header-right" v-bind="drag">
-          <template v-if="view === 'settings'">
+          <template v-if="settingsOpen">
             <button class="chip" @click="settingsAction('reset-position')">Konumu sıfırla</button>
             <button class="chip danger" @click="settingsAction('quit')">Çıkış</button>
           </template>
@@ -155,7 +197,7 @@ const islandStyle = computed(() => {
           </button>
           <button
             class="gear icon-btn"
-            :class="{ active: view === 'settings' }"
+            :class="{ active: settingsOpen }"
             title="Ayarlar"
             aria-label="Ayarlar"
             @click="toggleSettings"
@@ -171,10 +213,10 @@ const islandStyle = computed(() => {
         </span>
       </header>
 
-      <!-- Kayan sayfalar: kutucuklar ↔ ayarlar -->
+      <!-- Kayan sayfalar: Ana · Sistem · Güç · (Ayarlar) -->
       <div class="pages">
-      <div class="track" :class="{ 'show-settings': view === 'settings' }">
-      <div class="tiles page" :inert="view === 'settings'">
+      <div class="track" :style="{ '--page-index': pageIndex }">
+      <div class="tiles page" :inert="!isActive('main')">
         <Tile
           class="music-tile"
           title="Müzik"
@@ -220,9 +262,13 @@ const islandStyle = computed(() => {
         </Tile>
       </div>
 
+      <SystemPanel class="page" :inert="!isActive('system')" :stats="systemStats" />
+
+      <PowerPanel class="page" :inert="!isActive('power')" />
+
       <SettingsPanel
         class="page"
-        :inert="view !== 'settings'"
+        :inert="!settingsOpen"
         :settings="settings"
         :claude-connected="claude.connected.value"
       />
@@ -372,16 +418,23 @@ const islandStyle = computed(() => {
   animation: fade-in 0.25s ease 0.1s both;
 }
 
+/* Ortadaki sekme şeridi tam ortada kalsın diye iki yan eşit genişlikte. */
 .header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   font-size: 11px;
   color: var(--text-dim);
   cursor: grab;
 }
 
+.header-left,
+.back {
+  justify-self: start;
+}
+
 .header-right {
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -427,7 +480,9 @@ const islandStyle = computed(() => {
   min-height: 0;
   margin: -10px -14px -14px;
   padding: 10px 14px 14px;
-  overflow: hidden;
+  /* `hidden` kutu odak/scrollIntoView ile yana kaydırılabiliyor ve sayfalar
+     kayıyor; `clip` hiç kaydırılamaz. */
+  overflow: clip;
 }
 
 .track {
@@ -437,12 +492,54 @@ const islandStyle = computed(() => {
   transition: transform 0.45s var(--ease);
 }
 
-.track.show-settings {
-  transform: translateX(calc(-100% - var(--page-gap)));
+.track {
+  transform: translateX(calc(var(--page-index, 0) * (-100% - var(--page-gap))));
+}
+
+/* Sekme şeridi: eşit genişlikte düğmeler, altlarında kayan bir hap. */
+.tabs {
+  --tab-w: 58px;
+  position: relative;
+  display: flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tabs button {
+  position: relative;
+  width: var(--tab-w);
+  padding: 2px 0;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  transition: color 0.2s ease;
+}
+
+.tabs button:hover,
+.tabs button.active {
+  color: var(--text);
+}
+
+.tab-pill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: var(--tab-w);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  transform: translateX(calc(var(--tab-index) * var(--tab-w)));
+  transition: transform 0.35s var(--ease);
 }
 
 .track > .page {
   flex: 0 0 100%;
+  /* İçerik (uzun uygulama adları) sayfayı genişletip kaymayı bozmasın. */
+  min-width: 0;
   height: 100%;
   transition:
     opacity 0.35s ease,
