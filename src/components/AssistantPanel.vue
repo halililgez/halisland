@@ -240,6 +240,7 @@ watch(
       last?.streaming,
       last?.error,
       last?.tools?.length,
+      last?.confirms?.length,
     ];
   },
   async () => {
@@ -514,13 +515,29 @@ watch(
               <p v-if="thinkingOnly(m)" class="thinking">
                 <span class="spinner" aria-hidden="true" />{{ lastLine(m.thinking ?? "") }}
               </p>
-              <p v-else-if="m.streaming && !m.content && !m.tools?.length" class="thinking">
+              <p v-else-if="m.streaming && !m.content && !m.tools?.length && !m.confirms?.length" class="thinking">
                 <span class="spinner" aria-hidden="true" />{{ a.think.value ? "Düşünüyor…" : "Yazıyor…" }}
               </p>
-              <span v-for="(t, i) in m.tools" :key="i" class="tool-note">
+              <div
+                v-for="c in m.confirms"
+                :key="c.id"
+                class="confirm"
+                :class="c.state"
+                role="group"
+                :aria-label="c.question"
+              >
+                <span class="confirm-q">{{ c.question }}</span>
+                <span class="confirm-path mono" :title="c.detail">{{ c.detail }}</span>
+                <span v-if="c.state === 'pending'" class="confirm-actions">
+                  <button class="mini-chip primary" @click="a.answer(c, true)">Aç</button>
+                  <button class="mini-chip" @click="a.answer(c, false)">Vazgeç</button>
+                </span>
+                <span v-else class="confirm-result">{{ c.state === "approved" ? "Onaylandı" : "Vazgeçildi" }}</span>
+              </div>
+              <span v-for="(t, i) in m.tools" :key="i" class="tool-note" :class="{ failed: !t.ok }">
                 <svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
                   <path
-                    d="M5 12.5l4.5 4.5L19 7"
+                    :d="t.ok ? 'M5 12.5l4.5 4.5L19 7' : 'M7 7l10 10M17 7L7 17'"
                     fill="none"
                     stroke="currentColor"
                     stroke-width="3"
@@ -528,7 +545,7 @@ watch(
                     stroke-linejoin="round"
                   />
                 </svg>
-                {{ t }}
+                {{ t.text }}
               </span>
               <div v-if="m.content" class="text">
                 <span v-html="format(m.content.trim())" /><span v-if="m.streaming" class="caret" />
@@ -1093,6 +1110,66 @@ watch(
   font-size: 10.5px;
   color: var(--c-seen);
   background: color-mix(in srgb, var(--c-seen) 14%, transparent);
+}
+
+.confirm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 10px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--c-waiting) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c-waiting) 35%, transparent);
+  font-size: 11px;
+}
+
+.confirm-q {
+  font-weight: 600;
+}
+
+.confirm-path {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.confirm-actions,
+.confirm-result {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  gap: 5px;
+}
+
+.confirm-result {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.confirm.approved,
+.confirm.denied {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.mini-chip.primary {
+  background: color-mix(in srgb, var(--c-seen) 35%, transparent);
+  color: var(--text);
+}
+
+.mini-chip.primary:hover {
+  background: color-mix(in srgb, var(--c-seen) 55%, transparent);
+}
+
+.tool-note.failed {
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .thinking,

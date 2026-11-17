@@ -103,7 +103,9 @@ type StreamEvent =
   | { type: "conversation"; conversationId: number }
   | { type: "thinking"; text: string }
   | { type: "token"; text: string }
-  | { type: "tool"; text: string }
+  | { type: "tool"; text: string; approved?: boolean }
+  | { type: "confirm"; id: string; message: string; text: string }
+  | { type: "confirm-end"; id: string; approved: boolean }
   | { type: "done"; tokensPerSec?: number }
   | { type: "title"; text: string; conversationId: number }
   | { type: "error"; message: string };
@@ -129,7 +131,24 @@ export interface ChatMsg {
   /** Cevap hızı (token/sn). */
   speed?: number;
   /** Bu cevapta çalışan araçların kısa notları (ör. "Hatırlayacağım: …"). */
-  tools?: string[];
+  tools?: ToolNote[];
+  /** Kullanıcı onayı isteyen araçlar (ör. dosya açma). */
+  confirms?: Confirm[];
+}
+
+export interface ToolNote {
+  text: string;
+  /** false: iş yapılmadı (bulunamadı, reddedildi, hata). */
+  ok: boolean;
+}
+
+export interface Confirm {
+  id: string;
+  /** "Dosya açılsın mı?" */
+  question: string;
+  /** Açılacak yol. */
+  detail: string;
+  state: "pending" | "approved" | "denied";
 }
 
 export interface ConversationInfo {
@@ -446,10 +465,21 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
         reply.content += e.text;
         break;
       case "tool":
-        reply.tools = [...(reply.tools ?? []), e.text];
+        reply.tools = [...(reply.tools ?? []), { text: e.text, ok: e.approved !== false }];
         // Hatırlananlar değişmiş olabilir.
         refreshMemories();
         break;
+      case "confirm":
+        reply.confirms = [
+          ...(reply.confirms ?? []),
+          { id: e.id, question: e.message, detail: e.text, state: "pending" },
+        ];
+        break;
+      case "confirm-end": {
+        const c = reply.confirms?.find((x) => x.id === e.id);
+        if (c) c.state = e.approved ? "approved" : "denied";
+        break;
+      }
       case "done":
         reply.speed = e.tokensPerSec;
         // Cevap bitti; başlık için akış biraz daha açık kalabilir.
@@ -463,6 +493,19 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
         reply.error = e.message;
         break;
     }
+  }
+
+  /** Onay isteyen araca cevap (Aç / Vazgeç). */
+  async function answer(c: Confirm, approved: boolean) {
+    if (c.state !== "pending") return;
+    c.state = approved ? "approved" : "denied";
+    const i = await getInfo();
+    if (!i?.supported) return;
+    await fetch(`${i.url}/confirm/${c.id}`, {
+      method: "POST",
+      headers: headers(i, true),
+      body: JSON.stringify({ approved }),
+    }).catch(() => {});
   }
 
   function stop() {
@@ -557,6 +600,7 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
     conversations,
     memories,
     send,
+    answer,
     stop,
     newChat,
     open,

@@ -40,7 +40,9 @@ public sealed record Memory(long Id, string Text, long Created);
 /// <summary>
 /// /chat akışındaki tek satır (NDJSON). Tür:
 /// "conversation" (sohbet kimliği; ilk satır), "thinking" (düşünce parçası),
-/// "token" (cevap parçası), "tool" (araç çalıştı; Text kullanıcıya gösterilecek özet),
+/// "token" (cevap parçası), "tool" (araç çalıştı; Text kullanıcıya gösterilecek özet; Approved false ise iş yapılmadı),
+/// "confirm" (araç kullanıcı onayı bekliyor: Id, Message soru, Text ayrıntı),
+/// "confirm-end" (onay cevaplandı ya da süresi doldu: Id, Approved),
 /// "done" (cevap bitti, istatistikler), "title" (sohbetin yeni başlığı) ya da "error".
 /// </summary>
 public sealed record StreamEvent(
@@ -49,7 +51,12 @@ public sealed record StreamEvent(
     long? ConversationId = null,
     int? Tokens = null,
     double? TokensPerSec = null,
-    string? Message = null);
+    string? Message = null,
+    string? Id = null,
+    bool? Approved = null);
+
+/// <summary>Onay bekleyen araca kullanıcının cevabı (POST /confirm/{id}).</summary>
+public sealed record ConfirmRequest(bool Approved);
 
 // ---------- Ollama API türleri (snake_case) ----------
 
@@ -112,6 +119,7 @@ public sealed record OllamaError([property: JsonPropertyName("error")] string? E
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ChatRequest))]
+[JsonSerializable(typeof(ConfirmRequest))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(StreamEvent))]
 [JsonSerializable(typeof(ConversationInfo[]))]
