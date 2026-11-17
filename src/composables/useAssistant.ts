@@ -2,9 +2,10 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * Yerel asistan (Faz 21). Backend `assistant/` (.NET) Halisland ile birlikte
- * başlar; arayüz onunla doğrudan `127.0.0.1:47822` üzerinden konuşur.
- * Sohbet şimdilik yalnızca bellekte; kalıcı hafıza Faz 22'de.
+ * Yerel asistan. Backend `assistant/` (.NET) Halisland ile birlikte başlar;
+ * arayüz onunla doğrudan `127.0.0.1:47822` üzerinden konuşur.
+ * Sohbetler, mesajlar ve hatırlananlar backend'in SQLite veritabanında
+ * (Faz 22); burada yalnızca açık sohbetin görüntüsü tutulur.
  */
 
 interface AssistantInfo {
@@ -22,9 +23,12 @@ interface Health {
 }
 
 type StreamEvent =
+  | { type: "conversation"; conversationId: number }
   | { type: "thinking"; text: string }
   | { type: "token"; text: string }
-  | { type: "done"; tokens?: number; tokensPerSec?: number }
+  | { type: "tool"; text: string }
+  | { type: "done"; tokensPerSec?: number }
+  | { type: "title"; text: string; conversationId: number }
   | { type: "error"; message: string };
 
 export type AssistantStatus =
@@ -44,17 +48,52 @@ export interface ChatMsg {
   streaming?: boolean;
   /** Cevap hızı (token/sn). */
   speed?: number;
+  /** Bu cevapta çalışan araçların kısa notları (ör. "Hatırlayacağım: …"). */
+  tools?: string[];
+}
+
+export interface ConversationInfo {
+  id: number;
+  title: string;
+  /** Unix ms */
+  updated: number;
+  count: number;
+}
+
+export interface Memory {
+  id: number;
+  text: string;
+  created: number;
+}
+
+interface StoredMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  thinking: string | null;
+  error: string | null;
+  speed: number | null;
 }
 
 const THINK_KEY = "halisland.assistant.think";
+const CONV_KEY = "halisland.assistant.conversation";
 /** Backend ilk açılışta bu süre boyunca "bağlanıyor" sayılır. */
 const STARTUP_GRACE_MS = 30_000;
 
-function loadThink(): boolean {
+function load(key: string): string | null {
   try {
-    return window.localStorage.getItem(THINK_KEY) === "1";
+    return window.localStorage.getItem(key);
   } catch {
-    return false;
+    return null;
+  }
+}
+
+function save(key: string, value: string | null) {
+  try {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch {
+    /* depo kapalıysa yalnızca bu oturumda geçerli */
   }
 }
 
@@ -62,22 +101,24 @@ export function useAssistant(active: Ref<boolean>) {
   const status = ref<AssistantStatus>("connecting");
   const model = ref("");
   const messages = ref<ChatMsg[]>([]);
-  const think = ref(loadThink());
+  const think = ref(load(THINK_KEY) === "1");
   const busy = ref(false);
+  /** Açık sohbet; null: yeni (henüz kaydedilmemiş) sohbet. */
+  const conversationId = ref<number | null>(Number(load(CONV_KEY)) || null);
+  const title = ref("");
+  const conversations = ref<ConversationInfo[]>([]);
+  const memories = ref<Memory[]>([]);
 
   let info: AssistantInfo | null = null;
-  let nextId = 1;
+  let nextId = -1; // yerel geçici kimlikler (veritabanınınkiyle çakışmasın diye eksi)
   let controller: AbortController | null = null;
   let warmedUp = false;
+  /** Açılışta son sohbet bir kez yüklenir. */
+  let restored = false;
   const startedAt = Date.now();
 
-  watch(think, (v) => {
-    try {
-      window.localStorage.setItem(THINK_KEY, v ? "1" : "0");
-    } catch {
-      /* depo kapalıysa yalnızca bu oturumda geçerli */
-    }
-  });
+  watch(think, (v) => save(THINK_KEY, v ? "1" : "0"));
+  watch(conversationId, (id) => save(CONV_KEY, id === null ? null : String(id)));
 
   async function getInfo(): Promise<AssistantInfo | null> {
     if (info) return info;
@@ -89,6 +130,19 @@ export function useAssistant(active: Ref<boolean>) {
     const h: Record<string, string> = { authorization: `Bearer ${i.token}` };
     if (json) h["content-type"] = "application/json";
     return h;
+  }
+
+  /** Backend'e JSON isteği; hata olursa null. */
+  async function api<T>(path: string, method = "GET"): Promise<T | null> {
+    const i = await getInfo();
+    if (!i?.supported) return null;
+    try {
+      const res = await fetch(`${i.url}${path}`, { method, headers: headers(i) });
+      if (!res.ok) return null;
+      return res.status === 204 ? (null as T) : ((await res.json()) as T);
+    } catch {
+      return null;
+    }
   }
 
   async function check() {
@@ -108,6 +162,12 @@ export function useAssistant(active: Ref<boolean>) {
       status.value = !h.ollama ? "no-ollama" : !h.modelInstalled ? "no-model" : "ready";
     } catch {
       status.value = Date.now() - startedAt < STARTUP_GRACE_MS ? "connecting" : "offline";
+    }
+    if (status.value === "connecting" || status.value === "offline") return;
+
+    if (!restored) {
+      restored = true;
+      if (conversationId.value !== null && !messages.value.length) await open(conversationId.value);
     }
     if (status.value === "ready" && active.value && !warmedUp) {
       warmedUp = true;
@@ -142,25 +202,26 @@ export function useAssistant(active: Ref<boolean>) {
     const i = await getInfo();
     if (!content || busy.value || !i?.supported) return;
 
-    // Modele giden geçmiş: hatasız, boş olmayan mesajlar.
-    const history = messages.value
-      .filter((m) => !m.error && m.content.trim())
-      .map((m) => ({ role: m.role, content: m.content }));
-    history.push({ role: "user", content });
-
-    messages.value.push({ id: nextId++, role: "user", content });
-    messages.value.push({ id: nextId++, role: "assistant", content: "", streaming: true });
+    messages.value.push({ id: nextId--, role: "user", content });
+    messages.value.push({ id: nextId--, role: "assistant", content: "", streaming: true });
     // Reaktif vekil üzerinden güncellenmeli ki ekran yenilensin.
     const reply = messages.value[messages.value.length - 1];
 
     busy.value = true;
-    controller = new AbortController();
+    // Bu isteğe ait denetleyici: "done"dan sonra akış başlık için açık
+    // kalırken yeni bir mesaj gönderilirse, eski isteğin bitişi yenisini bozmasın.
+    const ctl = new AbortController();
+    controller = ctl;
     try {
       const res = await fetch(`${i.url}/chat`, {
         method: "POST",
         headers: headers(i, true),
-        body: JSON.stringify({ messages: history, think: think.value }),
-        signal: controller.signal,
+        body: JSON.stringify({
+          text: content,
+          conversationId: conversationId.value ?? undefined,
+          think: think.value,
+        }),
+        signal: ctl.signal,
       });
       if (!res.ok || !res.body) throw new Error(`Asistan ${res.status} döndürdü.`);
 
@@ -185,21 +246,37 @@ export function useAssistant(active: Ref<boolean>) {
       }
     } finally {
       reply.streaming = false;
-      busy.value = false;
-      controller = null;
+      if (controller === ctl) {
+        busy.value = false;
+        controller = null;
+      }
     }
   }
 
   function apply(reply: ChatMsg, e: StreamEvent) {
     switch (e.type) {
+      case "conversation":
+        conversationId.value = e.conversationId;
+        break;
       case "thinking":
         reply.thinking = (reply.thinking ?? "") + e.text;
         break;
       case "token":
         reply.content += e.text;
         break;
+      case "tool":
+        reply.tools = [...(reply.tools ?? []), e.text];
+        // Hatırlananlar değişmiş olabilir.
+        refreshMemories();
+        break;
       case "done":
         reply.speed = e.tokensPerSec;
+        // Cevap bitti; başlık için akış biraz daha açık kalabilir.
+        reply.streaming = false;
+        busy.value = false;
+        break;
+      case "title":
+        if (e.conversationId === conversationId.value) title.value = e.text;
         break;
       case "error":
         reply.error = e.message;
@@ -209,16 +286,94 @@ export function useAssistant(active: Ref<boolean>) {
 
   function stop() {
     controller?.abort();
+    controller = null;
+    busy.value = false;
   }
 
-  function clear() {
+  /** Yeni sohbet: eskisi silinmez, geçmişte kalır. */
+  function newChat() {
     stop();
     messages.value = [];
+    conversationId.value = null;
+    title.value = "";
+  }
+
+  /** Geçmişten bir sohbeti açar. */
+  async function open(id: number) {
+    if (busy.value) stop();
+    const list = await api<StoredMessage[]>(`/conversations/${id}/messages`);
+    if (!list) {
+      // Silinmiş ya da bulunamadı.
+      if (conversationId.value === id) newChat();
+      return;
+    }
+    conversationId.value = id;
+    title.value = conversations.value.find((c) => c.id === id)?.title ?? "";
+    messages.value = list
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        thinking: m.thinking ?? undefined,
+        error: m.error ?? undefined,
+        speed: m.speed ?? undefined,
+      }));
+  }
+
+  async function refreshConversations() {
+    const list = await api<ConversationInfo[]>("/conversations");
+    if (!list) return;
+    conversations.value = list;
+    const current = list.find((c) => c.id === conversationId.value);
+    if (current) title.value = current.title;
+  }
+
+  async function removeConversation(id: number) {
+    await api(`/conversations/${id}`, "DELETE");
+    conversations.value = conversations.value.filter((c) => c.id !== id);
+    if (conversationId.value === id) newChat();
+  }
+
+  async function removeAllConversations() {
+    await api("/conversations", "DELETE");
+    conversations.value = [];
+    newChat();
+  }
+
+  async function refreshMemories() {
+    const list = await api<Memory[]>("/memories");
+    if (list) memories.value = list;
+  }
+
+  async function removeMemory(id: number) {
+    await api(`/memories/${id}`, "DELETE");
+    memories.value = memories.value.filter((m) => m.id !== id);
   }
 
   const ready = computed(() => status.value === "ready");
 
-  return { status, model, messages, think, busy, ready, send, stop, clear };
+  return {
+    status,
+    model,
+    messages,
+    think,
+    busy,
+    ready,
+    conversationId,
+    title,
+    conversations,
+    memories,
+    send,
+    stop,
+    newChat,
+    open,
+    refreshConversations,
+    removeConversation,
+    removeAllConversations,
+    refreshMemories,
+    removeMemory,
+  };
 }
 
 export type Assistant = ReturnType<typeof useAssistant>;

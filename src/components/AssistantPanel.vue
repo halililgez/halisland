@@ -1,21 +1,29 @@
 <script setup lang="ts">
 /**
- * Asistan sekmesi: yerel modelle (Ollama) sohbet. Başlıkta durum, "Düşün"
- * anahtarı ve yeni sohbet; altta mesajlar ve yazma kutusu.
- * Enter gönderir, Esc yanıtı durdurur.
+ * Asistan sekmesi: yerel modelle (Ollama) sohbet. Başlıkta Geçmiş, Hafıza,
+ * "Düşün" anahtarı ve Yeni; altta mesajlar ve yazma kutusu.
+ * Geçmiş ve Hafıza aynı kutucuğun içinde liste olarak açılır.
+ * Enter gönderir, Esc yanıtı durdurur (liste açıksa sohbete döner).
  */
 import { computed, nextTick, ref, watch } from "vue";
 import Tile from "./Tile.vue";
 import type { Assistant, AssistantStatus, ChatMsg } from "../composables/useAssistant";
+import { timeAgo } from "../composables/useClipboard";
 
 const props = defineProps<{ assistant: Assistant; active: boolean }>();
 const a = props.assistant;
+
+type View = "chat" | "history" | "memory";
+const view = ref<View>("chat");
 
 const draft = ref("");
 const list = ref<HTMLElement | null>(null);
 const input = ref<HTMLInputElement | null>(null);
 /** Düşüncesi açılmış mesajlar. */
 const openThoughts = ref(new Set<number>());
+/** İki adımlı silme: ilk basışta "Sil?" olur, ikinci basış siler. */
+const confirming = ref<string | null>(null);
+let confirmTimer: number | undefined;
 
 const STATUS_TEXT: Record<AssistantStatus, string> = {
   unsupported: "Asistan şimdilik yalnızca Windows'ta.",
@@ -34,11 +42,53 @@ const statusText = computed(() =>
 
 const glow = computed(() => (a.busy.value ? "var(--c-focus)" : undefined));
 
+/** Göreli zamanlar listeyi açınca güncellenir. */
+const now = ref(Date.now());
+
+function show(v: View) {
+  confirming.value = null;
+  if (view.value === v) {
+    view.value = "chat";
+    return;
+  }
+  view.value = v;
+  now.value = Date.now();
+  if (v === "history") a.refreshConversations();
+  if (v === "memory") a.refreshMemories();
+}
+
+function newChat() {
+  a.newChat();
+  view.value = "chat";
+  nextTick(() => input.value?.focus({ preventScroll: true }));
+}
+
+async function openConversation(id: number) {
+  await a.open(id);
+  view.value = "chat";
+  stick = true;
+  await nextTick();
+  if (list.value) list.value.scrollTop = list.value.scrollHeight;
+}
+
+/** İlk basış onay ister (2,5 sn), ikinci basış işlemi yapar. */
+function confirmThen(key: string, action: () => void) {
+  window.clearTimeout(confirmTimer);
+  if (confirming.value === key) {
+    confirming.value = null;
+    action();
+    return;
+  }
+  confirming.value = key;
+  confirmTimer = window.setTimeout(() => (confirming.value = null), 2500);
+}
+
 function submit() {
   if (!a.ready.value || a.busy.value) return;
   const text = draft.value;
   if (!text.trim()) return;
   draft.value = "";
+  stick = true;
   a.send(text);
 }
 
@@ -46,6 +96,13 @@ function onKey(e: KeyboardEvent) {
   if (e.key === "Escape" && a.busy.value) {
     e.preventDefault();
     a.stop();
+  }
+}
+
+function onPanelKey(e: KeyboardEvent) {
+  if (e.key === "Escape" && view.value !== "chat") {
+    e.preventDefault();
+    view.value = "chat";
   }
 }
 
@@ -61,20 +118,29 @@ function lastLine(text: string): string {
   return lines[lines.length - 1] ?? "";
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 /**
- * Modelin en sık kullandığı iki Markdown biçimi: **kalın** ve `kod`.
- * Metin önce HTML'den kaçırılır; v-html'e yalnızca bu iki etiket girer.
+ * Modelin en sık kullandığı Markdown: ```kod bloğu```, **kalın** ve `kod`.
+ * Metin önce HTML'den kaçırılır; v-html'e yalnızca bu etiketler girer.
  */
 function format(text: string): string {
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-  return escaped
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-    .replace(/^#{1,6}\s+/gm, "");
+  return text
+    .split(/```/)
+    .map((part, i) => {
+      if (i % 2 === 1) {
+        // Kod bloğu: ilk satır dil adıysa atılır.
+        const code = part.replace(/^[\w#+.-]*\n/, "").replace(/\n$/, "");
+        return `<pre><code>${escapeHtml(code)}</code></pre>`;
+      }
+      return escapeHtml(part)
+        .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+        .replace(/^#{1,6}\s+/gm, "");
+    })
+    .join("");
 }
 
 function thinkingOnly(m: ChatMsg) {
@@ -96,6 +162,7 @@ watch(
       last?.thinking?.length,
       last?.streaming,
       last?.error,
+      last?.tools?.length,
     ];
   },
   async () => {
@@ -108,47 +175,135 @@ watch(
 watch(
   () => props.active,
   async (on) => {
-    if (!on) return;
+    if (!on) {
+      view.value = "chat";
+      return;
+    }
     await nextTick();
+    if (list.value) list.value.scrollTop = list.value.scrollHeight;
     input.value?.focus({ preventScroll: true });
   },
 );
 </script>
 
 <template>
-  <div class="assistant">
+  <div class="assistant" @keydown="onPanelKey">
     <Tile title="Asistan" class="chat-tile" :glow="glow" :pulse="a.busy.value">
       <template #head>
         <span class="head">
-          <span v-if="a.ready.value" class="model mono" :title="`Model: ${a.model.value}`">{{ a.model.value }}</span>
-          <button
-            class="mini-chip toggle"
-            :class="{ on: a.think.value }"
-            :aria-pressed="a.think.value"
-            title="Düşünme açıkken cevaplar daha dikkatli ama daha yavaş"
-            @click="a.think.value = !a.think.value"
-          >
-            <span class="knob" aria-hidden="true" />
-            Düşün
-          </button>
-          <button
-            v-if="a.messages.value.length"
-            class="mini-chip"
-            title="Yeni sohbet"
-            @click="a.clear()"
-          >
-            Yeni
-          </button>
+          <span v-if="view === 'chat' && a.title.value" class="conv-title" :title="a.title.value">
+            {{ a.title.value }}
+          </span>
+          <span class="actions">
+            <button
+              class="mini-chip"
+              :class="{ active: view === 'history' }"
+              :aria-pressed="view === 'history'"
+              title="Geçmiş sohbetler"
+              @click="show('history')"
+            >
+              Geçmiş
+            </button>
+            <button
+              class="mini-chip"
+              :class="{ active: view === 'memory' }"
+              :aria-pressed="view === 'memory'"
+              title="Asistanın senin hakkında hatırladıkları"
+              @click="show('memory')"
+            >
+              Hafıza
+            </button>
+            <button
+              class="mini-chip toggle"
+              :class="{ on: a.think.value }"
+              :aria-pressed="a.think.value"
+              title="Düşünme açıkken cevaplar daha dikkatli ama daha yavaş"
+              @click="a.think.value = !a.think.value"
+            >
+              <span class="knob" aria-hidden="true" />
+              Düşün
+            </button>
+            <button
+              class="mini-chip"
+              title="Yeni sohbet (bu sohbet geçmişte kalır)"
+              :disabled="view === 'chat' && !a.messages.value.length"
+              @click="newChat"
+            >
+              Yeni
+            </button>
+          </span>
         </span>
       </template>
 
-      <div class="body">
+      <!-- Geçmiş -->
+      <div v-if="view === 'history'" class="body">
+        <ul v-if="a.conversations.value.length" class="rows">
+          <li
+            v-for="c in a.conversations.value"
+            :key="c.id"
+            :class="{ current: c.id === a.conversationId.value }"
+          >
+            <button class="row-main" @click="openConversation(c.id)">
+              <span class="row-text">{{ c.title || "Adsız sohbet" }}</span>
+              <span class="row-meta mono">{{ timeAgo(c.updated, now) }}</span>
+            </button>
+            <button
+              class="row-del"
+              :class="{ armed: confirming === `c${c.id}` }"
+              :title="confirming === `c${c.id}` ? 'Silmek için yeniden bas' : 'Sohbeti sil'"
+              @click="confirmThen(`c${c.id}`, () => a.removeConversation(c.id))"
+            >
+              {{ confirming === `c${c.id}` ? "Sil?" : "×" }}
+            </button>
+          </li>
+        </ul>
+        <div v-else class="empty hint">Henüz kayıtlı sohbet yok.</div>
+        <div v-if="a.conversations.value.length" class="list-foot">
+          <span>{{ a.conversations.value.length }} sohbet · bu bilgisayarda</span>
+          <button
+            class="mini-chip danger"
+            :class="{ armed: confirming === 'all' }"
+            @click="confirmThen('all', a.removeAllConversations)"
+          >
+            {{ confirming === "all" ? "Hepsi silinsin mi?" : "Tümünü sil" }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Hafıza -->
+      <div v-else-if="view === 'memory'" class="body">
+        <ul v-if="a.memories.value.length" class="rows">
+          <li v-for="m in a.memories.value" :key="m.id">
+            <span class="row-main static">
+              <span class="row-text wrap">{{ m.text }}</span>
+            </span>
+            <button
+              class="row-del"
+              :class="{ armed: confirming === `m${m.id}` }"
+              :title="confirming === `m${m.id}` ? 'Silmek için yeniden bas' : 'Unut'"
+              @click="confirmThen(`m${m.id}`, () => a.removeMemory(m.id))"
+            >
+              {{ confirming === `m${m.id}` ? "Unut?" : "×" }}
+            </button>
+          </li>
+        </ul>
+        <div v-else class="empty hint">
+          Asistan henüz senin hakkında bir şey hatırlamıyor. "Adım Halil, bunu hatırla" gibi söyleyebilirsin.
+        </div>
+        <div class="list-foot">
+          <span>Her sohbette asistana verilir. Unutmasını istediğini buradan sil.</span>
+        </div>
+      </div>
+
+      <!-- Sohbet -->
+      <div v-else class="body">
         <div v-if="!a.ready.value && !a.messages.value.length" class="empty">
           <span class="state-dot" :class="a.status.value" aria-hidden="true" />
           {{ statusText }}
         </div>
         <div v-else-if="!a.messages.value.length" class="empty hint">
           Bir şey sor. Her şey bu bilgisayarda kalır.
+          <small class="mono">{{ a.model.value }}</small>
         </div>
         <ul v-else ref="list" class="messages" @scroll="onScroll">
           <li v-for="m in a.messages.value" :key="m.id" :class="['msg', m.role]">
@@ -165,12 +320,26 @@ watch(
               <p v-if="thinkingOnly(m)" class="thinking">
                 <span class="spinner" aria-hidden="true" />{{ lastLine(m.thinking ?? "") }}
               </p>
-              <p v-else-if="m.streaming && !m.content" class="thinking">
+              <p v-else-if="m.streaming && !m.content && !m.tools?.length" class="thinking">
                 <span class="spinner" aria-hidden="true" />{{ a.think.value ? "Düşünüyor…" : "Yazıyor…" }}
               </p>
-              <p v-if="m.content" class="text">
+              <span v-for="(t, i) in m.tools" :key="i" class="tool-note">
+                <svg viewBox="0 0 24 24" width="10" height="10" aria-hidden="true">
+                  <path
+                    d="M5 12.5l4.5 4.5L19 7"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                {{ t }}
+              </span>
+              <div v-if="m.content" class="text">
                 <span v-html="format(m.content.trim())" /><span v-if="m.streaming" class="caret" />
-              </p>
+              </div>
+              <p v-else-if="!m.streaming && !m.error && !m.tools?.length" class="stopped">Durduruldu</p>
               <p v-if="m.error" class="error">{{ m.error }}</p>
               <span v-if="m.speed && !m.streaming" class="meta mono">{{ m.speed }} token/sn</span>
             </template>
@@ -243,18 +412,32 @@ watch(
 }
 
 .head {
-  margin-left: auto;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-.model {
-  font-size: 9.5px;
+.conv-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
   font-weight: 500;
   letter-spacing: normal;
   text-transform: none;
-  opacity: 0.8;
+  color: var(--text);
+  opacity: 0.75;
+}
+
+.actions {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .mini-chip {
@@ -269,9 +452,20 @@ watch(
   color: var(--text-dim);
 }
 
-.mini-chip:hover {
+.mini-chip:hover:not(:disabled),
+.mini-chip.active {
   background: rgba(255, 255, 255, 0.16);
   color: var(--text);
+}
+
+.mini-chip:disabled {
+  opacity: 0.4;
+}
+
+.mini-chip.danger:hover,
+.mini-chip.danger.armed {
+  background: rgba(255, 90, 90, 0.22);
+  color: #ff8a8a;
 }
 
 .toggle {
@@ -324,12 +518,23 @@ watch(
 .empty {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
+  padding: 0 24px;
   font-size: 11.5px;
   color: var(--text-dim);
   text-align: center;
+}
+
+.empty:not(.hint) {
+  flex-direction: row;
+}
+
+.empty small {
+  font-size: 9.5px;
+  opacity: 0.7;
 }
 
 .state-dot {
@@ -349,6 +554,110 @@ watch(
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* ---------- Geçmiş ve Hafıza listeleri ---------- */
+.rows {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  font-size: 11.5px;
+}
+
+.rows li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.rows li:hover,
+.rows li.current {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rows li.current .row-text {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: color-mix(in srgb, var(--text) 88%, transparent);
+}
+
+.row-text.wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.row-meta {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.row-del {
+  flex: none;
+  min-width: 22px;
+  height: 20px;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-dim);
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease;
+}
+
+.rows li:hover .row-del,
+.row-del:focus-visible,
+.row-del.armed {
+  opacity: 1;
+}
+
+.row-del:hover,
+.row-del.armed {
+  background: rgba(255, 90, 90, 0.22);
+  color: #ff8a8a;
+}
+
+.row-del.armed {
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.list-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* ---------- Sohbet ---------- */
 .messages {
   flex: 1;
   min-height: 0;
@@ -404,12 +713,39 @@ watch(
   font-size: 11px;
 }
 
+.text :deep(pre) {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.text :deep(pre code) {
+  padding: 0;
+  background: none;
+}
+
 .text :deep(strong) {
   font-weight: 650;
 }
 
+.tool-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--c-seen);
+  background: color-mix(in srgb, var(--c-seen) 14%, transparent);
+}
+
 .thinking,
-.thought {
+.thought,
+.stopped {
   font-size: 11px;
   color: var(--text-dim);
   font-style: italic;

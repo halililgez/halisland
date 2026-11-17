@@ -25,9 +25,14 @@
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>true</PublishTrimmed>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- SQLite'ın yerel DLL'i (e_sqlite3) exe'nin içine girsin; kurulumda yalnızca exe var. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>none</DebugType>
     <!-- IIS'e yönelik web.config ve modül DLL'i gerekmiyor; kurulumda yalnızca exe var. -->
     <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="11.0.0" />
+  </ItemGroup>
 
 </Project>

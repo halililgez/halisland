@@ -11,7 +11,7 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 - **Odak sayacı:** 25 dakikalık sayaç (başlat / duraklat / sıfırla). Çalışırken kompakt adada kalan süre görünür.
 - **Claude Code:** Claude çalışırken kutucuk turuncu parlar, onay beklerken sarıya döner. İş bitince mavi olur, sen adaya bakınca yeşile döner ve söner. Açık adada proje adı, son istemin, şu an ne yaptığı (komut çalıştırıyor, dosya düzenliyor...), neden beklediği ve değişen dosyalar görünür. **Terminale dön** düğmesi Claude'un çalıştığı pencereyi (Windows Terminal, VS Code, Claude masaüstü...) öne getirir.
 - **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
-- **Asistan (Windows):** Bilgisayarında çalışan yerel bir dil modeliyle ([Ollama](https://ollama.com), varsayılan `qwen3:8b`) sohbet. Cevaplar yazıldıkça akar; **Düşün** anahtarı açıkken model önce düşünür (daha dikkatli ama daha yavaş), düşünceyi sonradan açıp okuyabilirsin. Enter gönderir, Esc durdurur. Sohbet bu sekmede ada aşağı doğru uzar. Hiçbir şey internete gitmez. Ollama'nın kurulu ve açık olması gerekir (`ollama pull qwen3:8b`).
+- **Asistan (Windows):** Bilgisayarında çalışan yerel bir dil modeliyle ([Ollama](https://ollama.com), varsayılan `qwen3:8b`) sohbet. Cevaplar yazıldıkça akar; **Düşün** anahtarı açıkken model önce düşünür (daha dikkatli ama daha yavaş), düşünceyi sonradan açıp okuyabilirsin. Enter gönderir, Esc durdurur. Sohbet bu sekmede ada aşağı doğru uzar. Sohbetler kaydedilir: **Geçmiş**'ten eski bir sohbeti açıp sürdürebilir ya da silebilirsin, **Yeni** boş bir sohbet açar. "Adım Halil, bunu hatırla" dersen asistan bunu sonraki sohbetlerde de bilir; hatırladıklarını **Hafıza**'da görüp silebilirsin. Uzun sohbetlerin eski kısmı otomatik özetlenir. Her şey bilgisayarındaki `%APPDATA%\com.halil.halisland\assistant.db` dosyasında durur. Hiçbir şey internete gitmez. Ollama'nın kurulu ve açık olması gerekir (`ollama pull qwen3:8b`).
 - **Sekmeler:** Açık adanın üstündeki şeritten **Ana**, **Asistan**, **Bugün**, **Kontrol**, **Pano**, **Sistem** ve **Güç** arasında geçilir. Ada kapanınca bir sonraki açılış Ana sekmeyle başlar.
 - **Kontrol (Windows):** Ses seviyesi kaydırıcısı (fare tekerleğiyle de), sessiz düğmesi, 0/25/50/75/100 hızlı seviyeler; çıkış aygıtının adına tıklayıp başka bir aygıta (kulaklık, hoparlör, monitör) geçme. Ekran başına parlaklık (harici monitörlerde DDC/CI, dizüstünde Windows'un kendi ayarı) ve gece ışığı. Wi-Fi ve Bluetooth'u aç/kapa, bağlı ağın adı. Klavyenin ses tuşlarıyla yapılan değişiklikler de görünür.
 - **Hız:** İnternet hız testi: gecikme (ping), titreşim, indirme ve yükleme. Ölçüm Cloudflare'in hız testi sunucularıyla yapılır (anahtar gerekmez), yalnızca **Başlat**'a basınca çalışır ve ~15 saniye sürer; bağlantı hızına göre birkaç yüz MB'a kadar veri kullanabilir. Ada kapanınca test sürer, kompakt adada canlı hız görünür. Son 5 sonuç bu bilgisayarda saklanır.
@@ -104,7 +104,7 @@ src/
     ControlsPanel.vue      Kontrol sekmesi (ses, Wi-Fi, Bluetooth)
     TodayPanel.vue         Bugün sekmesi (tarih, hava durumu, halkalı sayaç, yapılacaklar)
     WeatherGlyph.vue       hava durumu simgeleri
-    AssistantPanel.vue     Asistan sekmesi (sohbet, düşünme anahtarı)
+    AssistantPanel.vue     Asistan sekmesi (sohbet, Geçmiş, Hafıza, düşünme anahtarı)
     ClipboardPanel.vue     Pano sekmesi (liste, arama, önizleme)
     SystemPanel.vue        Sistem sekmesi (Ring.vue: yüzde halkası)
     PowerPanel.vue         Güç sekmesi (onaylı düğmeler)
@@ -122,7 +122,7 @@ src/
     useDisplay.ts          parlaklık ve gece ışığı
     useWeather.ts          hava durumu ve şehir arama (Open-Meteo)
     useTodos.ts            yapılacaklar (localStorage)
-    useAssistant.ts        asistan backend'iyle sohbet (akış, durdurma, durum)
+    useAssistant.ts        asistan backend'iyle sohbet (akış, durdurma, geçmiş, hafıza)
   utils/color.ts           kapaktan vurgu rengi
 src-tauri/src/
   lib.rs                   uygulama kurulumu
@@ -142,7 +142,8 @@ src-tauri/src/
   system.rs                işlemci, bellek, uygulamalar, disk, ağ (sysinfo)
   power.rs                 kilitle, uyku, oturumu kapat, yeniden başlat, kapat
   assistant.rs             asistan backend'ini başlatır/durdurur, anahtarı arayüze verir
-assistant/                 asistan backend'i (.NET 10, port 47822): Ollama ile akışlı sohbet
+assistant/                 asistan backend'i (.NET 10, port 47822): Ollama ile akışlı sohbet,
+                           SQLite hafıza (Store.cs), hatırlama aracı (Tools.cs), başlık ve özet (Chat.cs)
 docs/ILERLEME.md           fazlar ve geliştirme günlüğü
 ```
 
