@@ -17,7 +17,7 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 - **Pano geçmişi (Windows):** Kopyaladığın metinler, bağlantılar ve görseller Pano sekmesinde birikir. Arama ve Metin / Bağlantı / Görsel filtreleri var. Satıra tıklayınca yeniden panoya kopyalanır. Öğeleri sabitleyebilir, silebilir ya da hepsini temizleyebilirsin. Geçmiş yalnızca bellekte tutulur, diske yazılmaz; uygulama kapanınca gider. Parola yöneticilerinin "izleme" dışı bıraktığı kopyalamalar alınmaz. Ayarlardan "Pano geçmişi" kapatılınca geçmiş silinir.
 - **Sistem:** İşlemci ve bellek halkaları, en çok bellek kullanan dört uygulama (aynı uygulamanın süreçleri tek satırda toplanır), sistem diskinin doluluğu, anlık indirme/yükleme hızı ve bilgisayarın açık kalma süresi. Ölçüm yalnızca sekme açıkken, iki saniyede bir yapılır.
 - **Güç:** Kilitle, uyku, oturumu kapat, yeniden başlat, kapat. Son üçü geri alınamadığı için önce sayfanın üstünde bir onay şeridi açar ("Bilgisayar kapatılsın mı?" [Vazgeç] [Kapat]); Esc ya da sekmeden çıkmak iptal eder.
-- **Ayarlar:** Adaya sağ tıkla, açık adadaki dişliye bas ya da görev çubuğundaki Halisland simgesine sağ tıkla (Windows 11 bu simgeyi `^` alanına saklayabilir): adayı gizle/göster, konumu sıfırla, odak süresi, cam efekti (buzlu / sade / kapalı), kapak rengi, Claude Code'u bağla, pano geçmişi, oturum açılınca başlat, çıkış. Adayı sürüklediğin yer hatırlanır.
+- **Ayarlar:** Adaya sağ tıkla, açık adadaki dişliye bas ya da görev çubuğundaki Halisland simgesine sağ tıkla (Windows 11 bu simgeyi `^` alanına saklayabilir): adayı gizle/göster, adanın yapışacağı kenar (yön tuşlarıyla üst / alt / sol / sağ; sağda ve solda ada dikey olur, hep ekranın içine doğru açılır), konumu sıfırla, odak süresi, cam efekti (buzlu / sade / kapalı), kapak rengi, Claude Code'u bağla, pano geçmişi, oturum açılınca başlat, çıkış. Adayı sürüklediğin yer hatırlanır.
 
 ## Kurulum (Windows)
 
@@ -113,7 +113,7 @@ src/
   utils/color.ts           kapaktan vurgu rengi
 src-tauri/src/
   lib.rs                   uygulama kurulumu
-  island.rs                pencere konumu ve boyutu (resize_island komutu)
+  island.rs                pencere konumu, kenar ve boyutu (resize_island komutu)
   glass.rs                 cam efekti (Windows 10 acrylic, pencere bölgesi, başlık şeridi koruması)
   backdrop.rs              Windows 11 oval bulanıklık (Windows.UI.Composition)
   settings.rs              ayarlar (settings.json), konum hatırlama, açılışta başlatma

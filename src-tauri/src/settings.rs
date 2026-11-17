@@ -7,23 +7,28 @@
 //! olayı gider.
 
 use crate::glass::GlassMode;
+use crate::island::Edge;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt;
 
 pub const FOCUS_CHOICES: [u32; 5] = [15, 25, 30, 45, 60];
 
-/// Adanın kaydedilmiş konumu: yatay merkez ve üst kenar (fiziksel piksel).
-/// Merkez saklanır çünkü ada açılıp kapanırken genişliği değişir.
+/// Adanın kaydedilmiş konumu: kenara bakan dayanak noktası (fiziksel
+/// piksel, bkz. `Edge::anchor`). Üst kenarda üst-orta, altta alt-orta,
+/// solda sol-orta, sağda sağ-orta. Pencerenin sol üstü saklanmaz çünkü ada
+/// açılıp kapanırken boyutu değişir.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedPosition {
-    pub center_x: i32,
+    /// Eski sürümler üst-orta noktayı `centerX` adıyla yazıyordu.
+    #[serde(alias = "centerX")]
+    pub x: i32,
     pub y: i32,
 }
 
@@ -55,6 +60,8 @@ pub struct Settings {
     pub clipboard: bool,
     /// Bugün sekmesindeki hava durumu; seçilmemişse gösterilmez.
     pub weather_city: Option<WeatherCity>,
+    /// Adanın yapıştığı ekran kenarı.
+    pub edge: Edge,
     pub position: Option<SavedPosition>,
 }
 
@@ -68,6 +75,7 @@ impl Default for Settings {
             locked: false,
             clipboard: true,
             weather_city: None,
+            edge: Edge::Top,
             position: None,
         }
     }
@@ -179,15 +187,13 @@ pub fn remember_position(window: &WebviewWindow) {
     let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) else {
         return;
     };
-    let next = SavedPosition {
-        center_x: pos.x + size.width as i32 / 2,
-        y: pos.y,
-    };
     // Pencere, ayarlar yüklenmeden önce de taşınmış olabilir.
     let Some(store) = window.try_state::<SettingsStore>() else {
         return;
     };
     let mut s = store.inner.lock().unwrap();
+    let (x, y) = s.edge.anchor(pos, size);
+    let next = SavedPosition { x, y };
     if s.position != Some(next) {
         s.position = Some(next);
         store.dirty.store(true, Ordering::Relaxed);
@@ -195,27 +201,31 @@ pub fn remember_position(window: &WebviewWindow) {
 }
 
 /// Kaydedilmiş konumu uygular. Konum artık bağlı olmayan bir monitördeyse
-/// `false` döner; o zaman ada varsayılan yere (üst orta) konur.
+/// `false` döner; o zaman ada seçili kenarın ortasına konur.
 pub fn restore_position(window: &WebviewWindow) -> bool {
-    let Some(saved) = window.state::<SettingsStore>().get().position else {
+    let s = window.state::<SettingsStore>().get();
+    let Some(saved) = s.position else {
         return false;
     };
     let Ok(monitors) = window.available_monitors() else {
         return false;
     };
+    // Alt ve sağ kenarda dayanak monitörün tam kenarına düşebilir.
     let visible = monitors.iter().any(|m| {
-        let (p, s) = (m.position(), m.size());
-        saved.center_x >= p.x
-            && saved.center_x < p.x + s.width as i32
+        let (p, size) = (m.position(), m.size());
+        saved.x >= p.x
+            && saved.x <= p.x + size.width as i32
             && saved.y >= p.y
-            && saved.y < p.y + s.height as i32
+            && saved.y <= p.y + size.height as i32
     });
     if !visible {
         return false;
     }
-    let width = window.outer_size().map(|s| s.width as i32).unwrap_or(0);
+    let Ok(size) = window.outer_size() else {
+        return false;
+    };
     window
-        .set_position(PhysicalPosition::new(saved.center_x - width / 2, saved.y))
+        .set_position(s.edge.origin((saved.x, saved.y), size))
         .is_ok()
 }
 
@@ -245,6 +255,14 @@ mod tests {
         assert!(!s.locked);
         assert!(s.clipboard);
         assert_eq!(s.position, None);
+        assert_eq!(s.edge, Edge::Top);
+    }
+
+    #[test]
+    fn eski_konum_okunur() {
+        let s: Settings =
+            serde_json::from_str(r#"{ "position": { "centerX": 960, "y": 8 } }"#).unwrap();
+        assert_eq!(s.position, Some(SavedPosition { x: 960, y: 8 }));
     }
 
     #[test]
