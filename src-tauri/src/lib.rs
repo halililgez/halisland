@@ -48,6 +48,7 @@ pub fn run() {
             media::media_artwork,
             power::power_action,
             settings::get_settings,
+            settings::set_weather_city,
             system::system_stats,
             tray::settings_action
         ])

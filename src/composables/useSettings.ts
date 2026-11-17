@@ -2,6 +2,7 @@ import { onBeforeUnmount, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { GlassMode } from "./useGlass";
+import type { WeatherCity } from "./useWeather";
 
 /** Rust tarafındaki `Settings` ile aynı (src-tauri/src/settings.rs). */
 export interface Settings {
@@ -13,6 +14,8 @@ export interface Settings {
   locked: boolean;
   /** Pano geçmişi tutulsun mu? */
   clipboard: boolean;
+  /** Bugün sekmesindeki hava durumunun şehri. */
+  weatherCity: WeatherCity | null;
 }
 
 const DEFAULTS: Settings = {
@@ -22,6 +25,7 @@ const DEFAULTS: Settings = {
   autostart: false,
   locked: false,
   clipboard: true,
+  weatherCity: null,
 };
 
 /**

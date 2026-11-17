@@ -27,6 +27,16 @@ pub struct SavedPosition {
     pub y: i32,
 }
 
+/// Hava durumu için seçilen şehir (Open-Meteo konum aramasından).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WeatherCity {
+    /// Görünen ad, ör. "Kadıköy, İstanbul".
+    pub name: String,
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -39,6 +49,8 @@ pub struct Settings {
     pub locked: bool,
     /// Pano geçmişi tutulsun mu? Kapatılınca geçmiş silinir.
     pub clipboard: bool,
+    /// Bugün sekmesindeki hava durumu; seçilmemişse gösterilmez.
+    pub weather_city: Option<WeatherCity>,
     pub position: Option<SavedPosition>,
 }
 
@@ -51,6 +63,7 @@ impl Default for Settings {
             autostart: false,
             locked: false,
             clipboard: true,
+            weather_city: None,
             position: None,
         }
     }
@@ -103,7 +116,18 @@ impl SettingsStore {
 /// Elle düzenlenmiş dosyadaki saçma değerleri düzeltir.
 fn sanitize(mut s: Settings) -> Settings {
     s.focus_minutes = s.focus_minutes.clamp(1, 180);
+    if let Some(c) = &s.weather_city
+        && !((-90.0..=90.0).contains(&c.latitude) && (-180.0..=180.0).contains(&c.longitude))
+    {
+        s.weather_city = None;
+    }
     s
+}
+
+/// Bugün sekmesinden şehir seçilir ya da kaldırılır (`None`).
+#[tauri::command]
+pub fn set_weather_city(app: AppHandle, city: Option<WeatherCity>) {
+    update(&app, |s| s.weather_city = city);
 }
 
 /// Ayarı değiştirir, kaydeder, frontend'e ve tepsi menüsüne bildirir.
@@ -226,5 +250,15 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(s.focus_minutes, 1);
+
+        let s = sanitize(Settings {
+            weather_city: Some(WeatherCity {
+                name: "Bozuk".into(),
+                latitude: 300.0,
+                longitude: 0.0,
+            }),
+            ..Default::default()
+        });
+        assert_eq!(s.weather_city, None);
     }
 }

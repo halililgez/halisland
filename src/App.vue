@@ -10,6 +10,7 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import SystemPanel from "./components/SystemPanel.vue";
 import PowerPanel from "./components/PowerPanel.vue";
 import ClipboardPanel from "./components/ClipboardPanel.vue";
+import TodayPanel from "./components/TodayPanel.vue";
 import { useClipboard } from "./composables/useClipboard";
 import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
@@ -19,7 +20,7 @@ import { COMPACT, EXPANDED, useIsland } from "./composables/useIsland";
 import { useMedia } from "./composables/useMedia";
 
 const settings = useSettings();
-const { time, date } = useClock();
+const { now, time, date } = useClock();
 const focus = useFocusTimer(computed(() => settings.value.focusMinutes));
 const claude = useClaudeStatus();
 const islandEl = ref<HTMLElement | null>(null);
@@ -51,9 +52,10 @@ const focusColor = computed(() =>
 );
 
 /** Açık adanın sekmeleri. Ayarlar sekme değil, dişliyle açılan ayrı sayfa. */
-type Tab = "main" | "clipboard" | "system" | "power";
+type Tab = "main" | "today" | "clipboard" | "system" | "power";
 const TABS: { id: Tab; label: string }[] = [
   { id: "main", label: "Ana" },
+  { id: "today", label: "Bugün" },
   { id: "clipboard", label: "Pano" },
   { id: "system", label: "Sistem" },
   { id: "power", label: "Güç" },
@@ -267,6 +269,18 @@ const islandStyle = computed(() => {
           />
         </Tile>
       </div>
+
+      <TodayPanel
+        class="page"
+        :inert="!isActive('today')"
+        :active="island.expanded.value && isActive('today')"
+        :now="now"
+        :city="settings.weatherCity"
+        :focus-minutes="settings.focusMinutes"
+        :focus="{ state: focus.state.value, label: focus.label.value, progress: focus.progress.value }"
+        @focus-toggle="focus.toggle()"
+        @focus-reset="focus.reset()"
+      />
 
       <ClipboardPanel
         class="page"
