@@ -1,3 +1,4 @@
+mod assistant;
 #[cfg(windows)]
 mod backdrop;
 mod claude;
@@ -15,7 +16,7 @@ mod system;
 mod terminal;
 mod tray;
 
-use tauri::{Manager, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -33,7 +34,9 @@ pub fn run() {
         .manage(claude::ClaudeStore::default())
         .manage(system::SystemMonitor::default())
         .manage(clipboard::ClipStore::default())
+        .manage(assistant::AssistantState::default())
         .invoke_handler(tauri::generate_handler![
+            assistant::assistant_info,
             claude::focus_claude,
             claude::claude_status,
             clipboard::clipboard_list,
@@ -104,10 +107,18 @@ pub fn run() {
             // Pano geçmişi (Windows).
             clipboard::start_watcher(handle.clone());
 
+            // Yerel asistan backend'i (Windows, .NET).
+            assistant::start(&handle);
+
             // Çalan müzik (Windows: SMTC).
             media::start_watcher(handle);
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("Halisland başlatılırken hata oluştu");
+        .build(tauri::generate_context!())
+        .expect("Halisland başlatılırken hata oluştu")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                assistant::stop(app);
+            }
+        });
 }

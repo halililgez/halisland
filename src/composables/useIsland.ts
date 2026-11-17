@@ -7,12 +7,15 @@ export const COMPACT = { width: 320, height: 44 };
 /** Sağ ve sol kenarda kompakt ada dikeydir. */
 export const COMPACT_VERTICAL = { width: 44, height: 320 };
 export const EXPANDED = { width: 720, height: 200 };
+/** Üst ve alt kenarda bazı sekmeler (Asistan) daha uzun açılır. */
+export const EXPANDED_TALL = { width: 720, height: 360 };
 /** Sağ ve sol kenarda açık ada da dikeydir; kutucuklar alt alta dizilir. */
 export const EXPANDED_VERTICAL = { width: 360, height: 600 };
 
 export const isVertical = (edge: Edge) => edge === "left" || edge === "right";
 export const compactSize = (edge: Edge) => (isVertical(edge) ? COMPACT_VERTICAL : COMPACT);
-export const expandedSize = (edge: Edge) => (isVertical(edge) ? EXPANDED_VERTICAL : EXPANDED);
+export const expandedSize = (edge: Edge, tall = false) =>
+  isVertical(edge) ? EXPANDED_VERTICAL : tall ? EXPANDED_TALL : EXPANDED;
 
 /** CSS geçiş süresiyle aynı olmalı (App.vue → .island transition). */
 const TRANSITION_MS = 380;
@@ -25,21 +28,50 @@ const COLLAPSE_DELAY_MS = 450;
  * alan tıklamaları engellemez.
  *  - Açılırken: önce pencere büyür, sonra ada animasyonla açılır.
  *  - Kapanırken: önce ada animasyonla kapanır, sonra pencere küçülür.
+ *
+ * `wantTall` açık adanın uzun hâlini ister (sekme belirler); `tall` o an
+ * uygulanan hâldir ve adanın CSS boyutu ona göre çizilir. Uzarken önce
+ * pencere büyür, kısalırken ada küçüldükten sonra pencere küçülür.
  */
 export function useIsland(edge: Ref<Edge>, onExpand?: () => void) {
   const expanded = ref(false);
+  const wantTall = ref(false);
+  const tall = ref(false);
   let pending: number | undefined;
   /** Açılış/kapanış sırasında pencere küçültmesi. */
   let settle: number | undefined;
+  /** Uzun hâlden çıkarken pencere küçültmesi. */
+  let shrink: number | undefined;
+
+  const openSize = () => expandedSize(edge.value, tall.value);
 
   // Geçiş boyunca ada kırpılmasın diye pencere kompakt ve açık boyutu
   // birlikte kapsayacak boyuta getirilir, animasyon bitince hedef boyuta
   // indirilir. Bugünkü boyutlarda bu her kenarda açık boyuta eşittir.
   const union = () => {
     const c = compactSize(edge.value);
-    const e = expandedSize(edge.value);
+    const e = openSize();
     return { width: Math.max(c.width, e.width), height: Math.max(c.height, e.height) };
   };
+
+  watch(wantTall, async (want) => {
+    if (shrink !== undefined) window.clearTimeout(shrink);
+    shrink = undefined;
+    if (!expanded.value) {
+      tall.value = want;
+      return;
+    }
+    if (want) {
+      await resize(expandedSize(edge.value, true));
+      tall.value = wantTall.value;
+      return;
+    }
+    tall.value = false;
+    shrink = window.setTimeout(() => {
+      shrink = undefined;
+      if (expanded.value && !tall.value && pending === undefined) resize(openSize());
+    }, TRANSITION_MS);
+  });
 
   function clearSettle() {
     if (settle !== undefined) window.clearTimeout(settle);
@@ -49,7 +81,7 @@ export function useIsland(edge: Ref<Edge>, onExpand?: () => void) {
   // Kenar değişince (ayar ya da tepsi menüsü) adanın yönü değişir.
   watch(edge, () => {
     if (pending !== undefined) return;
-    resize(expanded.value ? expandedSize(edge.value) : compactSize(edge.value));
+    resize(expanded.value ? openSize() : compactSize(edge.value));
   });
 
   // Güvenlik ağı: WebView bazen fare gerçekten üstünde değilken `mouseenter`
@@ -63,6 +95,7 @@ export function useIsland(edge: Ref<Edge>, onExpand?: () => void) {
   onBeforeUnmount(() => {
     window.clearInterval(guard);
     clearSettle();
+    if (shrink !== undefined) window.clearTimeout(shrink);
   });
 
   const resize = (size: { width: number; height: number }) =>
@@ -82,7 +115,7 @@ export function useIsland(edge: Ref<Edge>, onExpand?: () => void) {
     onExpand?.();
     settle = window.setTimeout(() => {
       settle = undefined;
-      if (expanded.value) resize(expandedSize(edge.value));
+      if (expanded.value) resize(openSize());
     }, TRANSITION_MS);
   }
 
@@ -112,5 +145,5 @@ export function useIsland(edge: Ref<Edge>, onExpand?: () => void) {
     expanded.value ? collapse() : expand();
   }
 
-  return { expanded, expand, collapse, hoverIn, hoverOut, toggle };
+  return { expanded, wantTall, tall, expand, collapse, hoverIn, hoverOut, toggle };
 }
