@@ -88,7 +88,7 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main penceresi bulunamadı");
             if !settings::restore_position(&window) {
-                island::place_top_center(&window)?;
+                island::place_on_edge(&window)?;
             }
             window.show()?;
             // Cam katmanı (Windows 11: oval bulanıklık) tepsi menüsünden önce

@@ -117,14 +117,16 @@ pub fn apply_shape(window: &WebviewWindow) {
     let w = (shape.width * scale).round() as i32;
     let h = (shape.height * scale).round() as i32;
     let r = (shape.radius * scale).round() as i32;
-    let x = (size.width as i32 - w) / 2;
-    platform::set_region(window, x, 0, w, h, r);
+    // Ada pencerede seçili kenara yaslıdır (App.vue: .island.edge-*).
+    let (x, y) = crate::island::current_edge(window)
+        .inner_offset((size.width as i32, size.height as i32), (w, h));
+    platform::set_region(window, x, y, w, h, r);
     // Oval bulanıklığın kırpması ana iş parçacığında güncellenir. Beklemiyoruz:
     // animasyon sırasında her karede gelir.
     if MAIN_THREAD.get() == Some(&thread::current().id()) {
-        platform::set_backdrop_shape(x, 0, w, h, r);
+        platform::set_backdrop_shape(x, y, w, h, r);
     } else {
-        let _ = window.run_on_main_thread(move || platform::set_backdrop_shape(x, 0, w, h, r));
+        let _ = window.run_on_main_thread(move || platform::set_backdrop_shape(x, y, w, h, r));
     }
 }
 

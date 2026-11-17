@@ -7,6 +7,7 @@
 //! bulanıklık eski (açık) boyutta kalıyordu.
 
 use crate::glass::GlassMode;
+use crate::island::Edge;
 use crate::settings::{self, FOCUS_CHOICES, Settings};
 use std::sync::Mutex;
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
@@ -19,10 +20,18 @@ const GLASS_CHOICES: [(GlassMode, &str, &str); 3] = [
     (GlassMode::Off, "glass-off", "Kapalı"),
 ];
 
+const EDGE_LABELS: [(Edge, &str); 4] = [
+    (Edge::Top, "Üst"),
+    (Edge::Bottom, "Alt"),
+    (Edge::Left, "Sol"),
+    (Edge::Right, "Sağ"),
+];
+
 /// Onay işaretlerini güncelleyebilmek için menü öğelerini saklarız.
 pub struct TrayItems {
     focus: Vec<(u32, CheckMenuItem<Wry>)>,
     glass: Vec<(GlassMode, CheckMenuItem<Wry>)>,
+    edge: Vec<(Edge, CheckMenuItem<Wry>)>,
     tint: CheckMenuItem<Wry>,
     autostart: CheckMenuItem<Wry>,
     claude: CheckMenuItem<Wry>,
@@ -55,6 +64,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .map(|&(mode, id, label)| {
             let item = CheckMenuItem::with_id(app, id, label, true, s.glass == mode, None::<&str>)?;
             Ok((mode, item))
+        })
+        .collect::<tauri::Result<_>>()?;
+
+    let edge: Vec<_> = EDGE_LABELS
+        .iter()
+        .map(|&(e, label)| {
+            let item = CheckMenuItem::with_id(app, e.id(), label, true, s.edge == e, None::<&str>)?;
+            Ok((e, item))
         })
         .collect::<tauri::Result<_>>()?;
 
@@ -91,6 +108,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         focus.iter().map(|(_, i)| i as &dyn tauri::menu::IsMenuItem<Wry>).collect();
     let glass_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
         glass.iter().map(|(_, i)| i as &dyn tauri::menu::IsMenuItem<Wry>).collect();
+    let edge_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
+        edge.iter().map(|(_, i)| i as &dyn tauri::menu::IsMenuItem<Wry>).collect();
+    let edge_menu = Submenu::with_items(app, "Kenar", true, &edge_refs)?;
     let focus_menu = Submenu::with_items(app, "Odak süresi", true, &focus_refs)?;
     // Windows 11'de bulanıklık oval şekle uymuyor (glass.rs); seçenek pasif.
     let glass_ok = crate::glass::blur_supported();
@@ -106,6 +126,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         &[
             &toggle,
             &locked,
+            &edge_menu,
             &MenuItem::with_id(app, "reset-position", "Konumu sıfırla", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &focus_menu,
@@ -132,6 +153,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     app.manage(TrayState(Mutex::new(Some(TrayItems {
         focus,
         glass,
+        edge,
         tint,
         autostart,
         claude,
@@ -176,6 +198,8 @@ fn handle(app: &AppHandle, id: &str) {
         _ => {
             if let Some(m) = id.strip_prefix("focus-").and_then(|m| m.parse().ok()) {
                 settings::update(app, |s| s.focus_minutes = m);
+            } else if let Some(&e) = Edge::ALL.iter().find(|e| e.id() == id) {
+                set_edge(app, e);
             } else if let Some(&(mode, _, _)) = GLASS_CHOICES.iter().find(|(_, gid, _)| *gid == id)
             {
                 settings::update(app, |s| s.glass = mode);
@@ -186,7 +210,7 @@ fn handle(app: &AppHandle, id: &str) {
 
 /// Adanın ayar panelinden gelen işlem. Kimlikler tepsi menüsündekilerle
 /// aynıdır: `toggle`, `lock`, `reset-position`, `tint`, `clipboard`, `claude-hooks`, `autostart`,
-/// `quit`, `focus-<dakika>`, `glass-<mod>`.
+/// `quit`, `focus-<dakika>`, `glass-<mod>`, `edge-<kenar>`.
 #[tauri::command]
 pub fn settings_action(app: AppHandle, id: String) {
     handle(&app, &id);
@@ -205,7 +229,7 @@ fn toggle_window(app: &AppHandle) {
 
 fn reset_position(app: &AppHandle) {
     let Some(window) = app.get_webview_window("main") else { return };
-    let _ = crate::island::place_top_center(&window);
+    let _ = crate::island::place_on_edge(&window);
     settings::update(app, |s| s.position = None);
 }
 
@@ -222,8 +246,24 @@ pub fn sync(app: &AppHandle, s: &Settings) {
     for (mode, item) in &items.glass {
         let _ = item.set_checked(*mode == s.glass);
     }
+    for (e, item) in &items.edge {
+        let _ = item.set_checked(*e == s.edge);
+    }
     let _ = items.tint.set_checked(s.tint);
     let _ = items.autostart.set_checked(s.autostart);
     let _ = items.locked.set_checked(s.locked);
     let _ = items.clipboard.set_checked(s.clipboard);
+}
+
+/// Adayı başka bir kenara taşır: o kenarın ortasına konur. Kompakt hâldeyse
+/// yönü (yatay/dikey) frontend `settings-changed` gelince boyutla düzeltir;
+/// `resize_island` kenara bakan noktayı koruduğu için ada kenarda kalır.
+fn set_edge(app: &AppHandle, edge: Edge) {
+    settings::update(app, |s| {
+        s.edge = edge;
+        s.position = None;
+    });
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = crate::island::place_on_edge(&window);
+    }
 }

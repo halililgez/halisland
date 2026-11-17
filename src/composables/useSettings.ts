@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { GlassMode } from "./useGlass";
 import type { WeatherCity } from "./useWeather";
+import type { Edge } from "./useIsland";
 
 /** Rust tarafındaki `Settings` ile aynı (src-tauri/src/settings.rs). */
 export interface Settings {
@@ -16,6 +17,8 @@ export interface Settings {
   clipboard: boolean;
   /** Bugün sekmesindeki hava durumunun şehri. */
   weatherCity: WeatherCity | null;
+  /** Adanın yapıştığı ekran kenarı. */
+  edge: Edge;
 }
 
 const DEFAULTS: Settings = {
@@ -26,6 +29,7 @@ const DEFAULTS: Settings = {
   locked: false,
   clipboard: true,
   weatherCity: null,
+  edge: "top",
 };
 
 /**

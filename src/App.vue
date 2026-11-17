@@ -17,7 +17,7 @@ import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
 import { useFocusTimer } from "./composables/useFocusTimer";
 import { useClaudeStatus, type ClaudeState } from "./composables/useClaudeStatus";
-import { COMPACT, EXPANDED, useIsland } from "./composables/useIsland";
+import { compactSize, expandedSize, isVertical, useIsland } from "./composables/useIsland";
 import { useMedia } from "./composables/useMedia";
 
 const settings = useSettings();
@@ -25,7 +25,9 @@ const { now, time, date } = useClock();
 const focus = useFocusTimer(computed(() => settings.value.focusMinutes));
 const claude = useClaudeStatus();
 const islandEl = ref<HTMLElement | null>(null);
-const island = useIsland(() => claude.markSeen());
+const edge = computed(() => settings.value.edge);
+const vertical = computed(() => isVertical(edge.value));
+const island = useIsland(edge, () => claude.markSeen());
 const media = useMedia();
 
 useGlass(
@@ -106,7 +108,7 @@ const drag = computed(() =>
 );
 
 const islandStyle = computed(() => {
-  const size = island.expanded.value ? EXPANDED : COMPACT;
+  const size = island.expanded.value ? expandedSize(edge.value) : compactSize(edge.value);
   return {
     width: `${size.width}px`,
     height: `${size.height}px`,
@@ -119,7 +121,10 @@ const islandStyle = computed(() => {
   <div
     ref="islandEl"
     class="island"
-    :class="{ expanded: island.expanded.value, tinted: !!accent, locked: settings.locked }"
+    :class="[
+      `edge-${edge}`,
+      { expanded: island.expanded.value, tinted: !!accent, locked: settings.locked, vertical },
+    ]"
     :style="islandStyle"
     @mouseenter="island.hoverIn"
     @mouseleave="island.hoverOut"
@@ -135,7 +140,11 @@ const islandStyle = computed(() => {
         />
         <img v-if="media.state.value.active && media.artwork.value" class="mini-cover" :src="media.artwork.value" alt="" />
       </span>
-      <span class="compact-time mono" v-bind="drag">{{ time }}</span>
+      <span v-if="vertical" class="compact-time mono stacked" v-bind="drag">
+        <span v-bind="drag">{{ time.split(":")[0] }}</span>
+        <span v-bind="drag">{{ time.split(":")[1] }}</span>
+      </span>
+      <span v-else class="compact-time mono" v-bind="drag">{{ time }}</span>
       <span v-if="focusActive" class="compact-focus mono">{{ focus.label.value }}</span>
       <span v-else-if="media.state.value.playing" class="eq" aria-hidden="true">
         <i /><i /><i /><i />
@@ -324,9 +333,6 @@ const islandStyle = computed(() => {
 <style scoped>
 .island {
   position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
   box-sizing: border-box;
   overflow: hidden;
   border-radius: 22px;
@@ -336,6 +342,37 @@ const islandStyle = computed(() => {
     width 0.38s var(--ease),
     height 0.38s var(--ease),
     border-radius 0.38s var(--ease);
+}
+
+/* Ada penceresinde seçili kenara yaslanır ve o kenarın ortasında durur;
+   böylece hep ekranın içine doğru açılır. Cam bölgesi de aynı yeri
+   kullanır (src-tauri/src/island.rs → Edge::inner_offset). */
+.island.edge-top,
+.island.edge-bottom {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.island.edge-top {
+  top: 0;
+}
+
+.island.edge-bottom {
+  bottom: 0;
+}
+
+.island.edge-left,
+.island.edge-right {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.island.edge-left {
+  left: 0;
+}
+
+.island.edge-right {
+  right: 0;
 }
 
 .island.expanded {
@@ -448,6 +485,77 @@ const islandStyle = computed(() => {
   justify-self: end;
   font-size: 12px;
   color: var(--c-focus);
+}
+
+/* Sağ ve sol kenarda dikey kompakt ada: üstte durum, ortada saat (saat ve
+   dakika alt alta), altta odak sayacı ya da ekolayzır. */
+.island.vertical .compact {
+  grid-template-columns: none;
+  grid-template-rows: 1fr auto 1fr;
+  justify-items: center;
+  padding: 14px 0;
+}
+
+.island.vertical .left {
+  align-self: start;
+  flex-direction: column;
+}
+
+.island.vertical .eq,
+.island.vertical .compact-focus {
+  justify-self: center;
+  align-self: end;
+}
+
+.island.vertical .compact-focus {
+  font-size: 10px;
+}
+
+/* Sağ ve sol kenarda açık ada dikey: başlıkta sekmeler ikinci satıra iner,
+   her sayfanın kutucukları alt alta dizilir. Sayfa bileşenlerinin kök
+   öğesi (.page) bu bileşenin kapsamlı stiline de dahildir. */
+.island.vertical .header {
+  grid-template-columns: 1fr auto;
+  row-gap: 8px;
+}
+
+.island.vertical .header > :nth-child(2) {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+
+.island.vertical .tabs {
+  --tab-w: 52px;
+}
+
+.island.vertical .track > .page {
+  flex-direction: column;
+}
+
+.island.vertical .track > .page > :deep(*) {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* Güç düğmeleri dikeyde alt alta; simge ve yazı yan yana. */
+.island.vertical :deep(.power .buttons) {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.island.vertical :deep(.power-btn) {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 0 18px;
+}
+
+.stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
 }
 
 /* ---------- Genişletilmiş ---------- */
