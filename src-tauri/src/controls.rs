@@ -26,6 +26,8 @@ pub struct AudioState {
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+// macOS'ta radyo okunmadığı için değerler orada hiç oluşturulmuyor.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub enum RadioStatus {
     On,
     Off,
