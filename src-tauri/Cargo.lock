@@ -1585,6 +1585,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tiny_http",
  "windows",
+ "windows-core",
  "windows-numerics",
 ]
 

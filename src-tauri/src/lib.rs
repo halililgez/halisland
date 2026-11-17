@@ -2,6 +2,8 @@
 mod backdrop;
 mod claude;
 mod clipboard;
+mod controls;
+mod display;
 mod glass;
 mod hooks;
 mod island;
@@ -39,6 +41,17 @@ pub fn run() {
             clipboard::clipboard_delete,
             clipboard::clipboard_pin,
             clipboard::clipboard_clear,
+            controls::audio_state,
+            controls::set_volume,
+            controls::set_mute,
+            controls::radios_state,
+            controls::set_radio,
+            controls::audio_devices,
+            controls::set_audio_device,
+            display::display_state,
+            display::set_brightness,
+            display::set_night_light,
+            display::open_night_light_settings,
             island::resize_island,
             island::cursor_over_island,
             location::device_location,
