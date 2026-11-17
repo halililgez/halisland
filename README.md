@@ -2,7 +2,7 @@
 
 Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında duran, üzerine gelince açılan cam görünümlü bir ada: saat, odak sayacı, Claude Code durumu ve çalan müzik.
 
-> Durum: v0.2.0, Windows. macOS desteği sürüyor. Fazlar için `docs/ILERLEME.md`.
+> Durum: v0.3.0, Windows. macOS desteği sürüyor. Fazlar için `docs/ILERLEME.md`.
 
 ## Özellikler
 
@@ -28,8 +28,8 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 Yeni sürüm çıkarmak için `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` ve `package.json` içindeki sürümü artır, sonra:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 GitHub Actions kurulum dosyasını derleyip **taslak** bir release oluşturur; GitHub'da kontrol edip yayınlarsın.

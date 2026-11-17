@@ -1,7 +1,7 @@
 name: Sürüm
 
 # İki şekilde çalışır:
-# - `v*` etiketi push edilince (ör. `git tag v0.2.0 && git push origin v0.2.0`):
+# - `v*` etiketi push edilince (ör. `git tag v0.3.0 && git push origin v0.3.0`):
 #   Windows kurulum dosyasını derler ve TASLAK bir GitHub Release oluşturur.
 #   Taslağı GitHub'da kontrol edip "Publish" demek sana kalır.
 # - Actions sekmesinden elle ("Run workflow"): yalnızca derler, kurulum
