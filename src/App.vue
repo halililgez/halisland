@@ -60,8 +60,11 @@ const focusColor = computed(() =>
 
 /** Açık adanın sekmeleri. Ayarlar sekme değil, dişliyle açılan ayrı sayfa. */
 type Tab = "main" | "assistant" | "today" | "controls" | "speed" | "clipboard" | "system" | "power";
-/** Asistan şimdilik yalnızca Windows'ta (backend orada başlatılıyor). */
-const HAS_ASSISTANT = navigator.userAgent.includes("Windows");
+/**
+ * Asistan şimdilik yalnızca Windows'ta (backend orada başlatılıyor) ve
+ * features.json'da "assistant": true ise derlemeye girer.
+ */
+const HAS_ASSISTANT = __ASSISTANT__ && navigator.userAgent.includes("Windows");
 /**
  * Asistan isteğe bağlı (Faz 23): ayarlarda açılmadıkça sekmesi görünmez,
  * backend de başlatılmaz. Her bilgisayar yerel modeli kaldıramaz.
