@@ -264,7 +264,11 @@ const islandStyle = computed(() => {
 
       <SystemPanel class="page" :inert="!isActive('system')" :stats="systemStats" />
 
-      <PowerPanel class="page" :inert="!isActive('power')" />
+      <PowerPanel
+        class="page"
+        :inert="!isActive('power')"
+        :active="island.expanded.value && isActive('power')"
+      />
 
       <SettingsPanel
         class="page"

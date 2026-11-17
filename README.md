@@ -13,7 +13,7 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 - **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
 - **Sekmeler:** Açık adanın üstündeki şeritten **Ana**, **Sistem** ve **Güç** arasında geçilir. Ada kapanınca bir sonraki açılış Ana sekmeyle başlar.
 - **Sistem:** İşlemci ve bellek halkaları, en çok bellek kullanan dört uygulama (aynı uygulamanın süreçleri tek satırda toplanır), sistem diskinin doluluğu, anlık indirme/yükleme hızı ve bilgisayarın açık kalma süresi. Ölçüm yalnızca sekme açıkken, iki saniyede bir yapılır.
-- **Güç:** Kilitle, uyku, oturumu kapat, yeniden başlat, kapat. Son üçü geri alınamadığı için önce "Emin misin?" diye sorar, ikinci basışta çalışır.
+- **Güç:** Kilitle, uyku, oturumu kapat, yeniden başlat, kapat. Son üçü geri alınamadığı için önce sayfanın üstünde bir onay şeridi açar ("Bilgisayar kapatılsın mı?" [Vazgeç] [Kapat]); Esc ya da sekmeden çıkmak iptal eder.
 - **Ayarlar:** Adaya sağ tıkla, açık adadaki dişliye bas ya da görev çubuğundaki Halisland simgesine sağ tıkla (Windows 11 bu simgeyi `^` alanına saklayabilir): adayı gizle/göster, konumu sıfırla, odak süresi, cam efekti (buzlu / sade / kapalı), kapak rengi, Claude Code'u bağla, oturum açılınca başlat, çıkış. Adayı sürüklediğin yer hatırlanır.
 
 ## Kurulum (Windows)
