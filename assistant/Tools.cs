@@ -7,7 +7,7 @@ public sealed record ToolResult(string ForModel, string ForUser);
 
 /// <summary>
 /// Modelin çağırabildiği araçlar (Ollama tool calling). Faz 22: yalnızca
-/// hafıza (hatirla, unut). Faz 23'te dosya, uygulama ve not araçları eklenecek.
+/// hafıza (hatirla). Faz 25'te dosya, uygulama ve not araçları eklenecek.
 /// </summary>
 public sealed class ToolRegistry(Store store)
 {

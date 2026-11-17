@@ -15,6 +15,8 @@ import type { Edge } from "../composables/useIsland";
 defineProps<{
   settings: Settings;
   claudeConnected: boolean;
+  /** Asistan yalnızca Windows'ta. */
+  hasAssistant: boolean;
 }>();
 
 const FOCUS_CHOICES = [15, 25, 30, 45, 60];
@@ -107,10 +109,19 @@ function act(id: string) {
       </div>
     </Tile>
 
-    <Tile title="Sistem">
+    <Tile class="system-tile" title="Sistem">
       <button class="switch-row" @click="act('claude-hooks')">
         <span>Claude Code'u bağla</span>
         <span class="switch" :class="{ on: claudeConnected }" />
+      </button>
+      <button
+        v-if="hasAssistant"
+        class="switch-row"
+        title="Yerel dil modeliyle sohbet (Ollama). Güçlü bir ekran kartı ister."
+        @click="act('assistant')"
+      >
+        <span>Asistan</span>
+        <span class="switch" :class="{ on: settings.assistant }" />
       </button>
       <button
         class="switch-row"
@@ -138,6 +149,11 @@ function act(id: string) {
 
 .tiles :deep(.tile-body) {
   gap: 8px;
+}
+
+/* Dört anahtar (Asistan ile) 200 px'lik sayfaya sığsın. */
+.system-tile :deep(.tile-body) {
+  gap: 2px;
 }
 
 .edge-tile {

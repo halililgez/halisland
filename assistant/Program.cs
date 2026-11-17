@@ -69,6 +69,14 @@ app.MapGet("/health", async (OllamaClient ollama, CancellationToken ct) =>
         Models: models ?? []);
 });
 
+// Halisland asistanı kapatınca çağırır (assistant.rs). `dotnet run` ile
+// açıldığında asıl uygulama ayrı bir süreçtir; dıştaki süreç öldürülünce arkada kalırdı.
+app.MapPost("/shutdown", (IHostApplicationLifetime life) =>
+{
+    life.StopApplication();
+    return Results.NoContent();
+});
+
 app.MapPost("/warmup", async (OllamaClient ollama, CancellationToken ct) =>
 {
     try

@@ -2,7 +2,8 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * Yerel asistan. Backend `assistant/` (.NET) Halisland ile birlikte başlar;
+ * Yerel asistan. İsteğe bağlı (Faz 23): ayarlarda açılınca backend
+ * `assistant/` (.NET) Halisland ile birlikte başlar;
  * arayüz onunla doğrudan `127.0.0.1:47822` üzerinden konuşur.
  * Sohbetler, mesajlar ve hatırlananlar backend'in SQLite veritabanında
  * (Faz 22); burada yalnızca açık sohbetin görüntüsü tutulur.
@@ -22,6 +23,52 @@ interface Health {
   models: string[];
 }
 
+/** Yerel model için donanım (`assistant_hardware`). */
+export interface Hardware {
+  gpu: string | null;
+  vramMb: number;
+  ramMb: number;
+}
+
+/** Donanıma göre önerilen model ve kısa açıklama. */
+export interface Advice {
+  model: string;
+  level: "good" | "ok" | "weak";
+  text: string;
+}
+
+/** Önerilen modeller (Ollama adları). */
+export const BIG_MODEL = "qwen3:8b";
+export const SMALL_MODEL = "qwen3.5:2b";
+
+/**
+ * qwen3:8b 8192 bağlamla ~6,5 GB VRAM ister (Faz 21 ölçümü); 8 GB kartta
+ * tamamen GPU'da kalır. Daha küçük kartta küçük model; tümleşik ekran
+ * kartında model işlemcide çalışır ve yavaştır.
+ */
+export function advise(h: Hardware): Advice {
+  const gb = (mb: number) => `${Math.round(mb / 1024)} GB`;
+  if (h.vramMb >= 7.5 * 1024)
+    return { model: BIG_MODEL, level: "good", text: `Ekran kartın (${gb(h.vramMb)}) yerel model için yeterli.` };
+  if (h.vramMb >= 3.5 * 1024)
+    return {
+      model: SMALL_MODEL,
+      level: "ok",
+      text: `Ekran kartın ${gb(h.vramMb)}; büyük model sığmaz, küçük model önerilir.`,
+    };
+  if (h.ramMb >= 15 * 1024)
+    return {
+      model: SMALL_MODEL,
+      level: "weak",
+      text: "Güçlü bir ekran kartı yok; küçük model işlemcide çalışır, yavaş olabilir.",
+    };
+  return {
+    model: SMALL_MODEL,
+    level: "weak",
+    text: `Bu bilgisayar (${gb(h.ramMb)} RAM, ayrı ekran kartı yok) yerel model için zayıf; cevaplar çok yavaş olabilir.`,
+  };
+}
+
 type StreamEvent =
   | { type: "conversation"; conversationId: number }
   | { type: "thinking"; text: string }
@@ -33,6 +80,7 @@ type StreamEvent =
 
 export type AssistantStatus =
   | "unsupported" // macOS / tarayıcı
+  | "disabled" // ayarlarda kapalı (varsayılan)
   | "connecting" // backend açılıyor (dev'de `dotnet run` birkaç saniye sürer)
   | "offline" // backend yok
   | "no-ollama"
@@ -97,9 +145,13 @@ function save(key: string, value: string | null) {
   }
 }
 
-export function useAssistant(active: Ref<boolean>) {
-  const status = ref<AssistantStatus>("connecting");
+export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>) {
+  const status = ref<AssistantStatus>(enabled.value ? "connecting" : "disabled");
   const model = ref("");
+  /** Ollama'da kurulu modeller. */
+  const installed = ref<string[]>([]);
+  const hardware = ref<Hardware | null>(null);
+  const advice = computed(() => (hardware.value ? advise(hardware.value) : null));
   const messages = ref<ChatMsg[]>([]);
   const think = ref(load(THINK_KEY) === "1");
   const busy = ref(false);
@@ -115,7 +167,8 @@ export function useAssistant(active: Ref<boolean>) {
   let warmedUp = false;
   /** Açılışta son sohbet bir kez yüklenir. */
   let restored = false;
-  const startedAt = Date.now();
+  /** Backend'in (yeniden) başlatıldığı an; açılış süresince "bağlanıyor". */
+  let startedAt = Date.now();
 
   watch(think, (v) => save(THINK_KEY, v ? "1" : "0"));
   watch(conversationId, (id) => save(CONV_KEY, id === null ? null : String(id)));
@@ -146,6 +199,10 @@ export function useAssistant(active: Ref<boolean>) {
   }
 
   async function check() {
+    if (!enabled.value) {
+      status.value = "disabled";
+      return;
+    }
     const i = await getInfo();
     if (!i?.supported) {
       status.value = "unsupported";
@@ -159,6 +216,7 @@ export function useAssistant(active: Ref<boolean>) {
       if (!res.ok) throw new Error(String(res.status));
       const h = (await res.json()) as Health;
       model.value = h.model;
+      installed.value = h.models;
       status.value = !h.ollama ? "no-ollama" : !h.modelInstalled ? "no-model" : "ready";
     } catch {
       status.value = Date.now() - startedAt < STARTUP_GRACE_MS ? "connecting" : "offline";
@@ -176,10 +234,12 @@ export function useAssistant(active: Ref<boolean>) {
     }
   }
 
-  // Sekme görünürken 3 sn'de bir, değilken 30 sn'de bir bakılır.
+  // Sekme görünürken 3 sn'de bir, değilken 30 sn'de bir bakılır. Asistan
+  // kapalıyken hiç bakılmaz.
   let timer: number | undefined;
   function schedule() {
     window.clearTimeout(timer);
+    if (!enabled.value) return;
     timer = window.setTimeout(
       async () => {
         await check();
@@ -192,6 +252,36 @@ export function useAssistant(active: Ref<boolean>) {
   watch(active, (on) => {
     if (on) check().then(schedule);
   });
+  watch(enabled, (on) => {
+    if (on) {
+      startedAt = Date.now();
+      status.value = "connecting";
+      warmedUp = false;
+      restored = false;
+      loadHardware();
+    } else {
+      stop();
+      status.value = "disabled";
+    }
+    check().then(schedule);
+  });
+
+  async function loadHardware() {
+    if (hardware.value) return;
+    hardware.value = await invoke<Hardware>("assistant_hardware").catch(() => null);
+  }
+  if (enabled.value) loadHardware();
+
+  /** Ollama modelini değiştirir; backend yeniden başlar. */
+  async function setModel(name: string) {
+    stop();
+    startedAt = Date.now();
+    status.value = "connecting";
+    model.value = name;
+    warmedUp = false;
+    await invoke("set_assistant_model", { model: name }).catch(() => {});
+    window.setTimeout(() => check().then(schedule), 1500);
+  }
   onBeforeUnmount(() => {
     window.clearTimeout(timer);
     controller?.abort();
@@ -356,6 +446,10 @@ export function useAssistant(active: Ref<boolean>) {
   return {
     status,
     model,
+    installed,
+    hardware,
+    advice,
+    setModel,
     messages,
     think,
     busy,

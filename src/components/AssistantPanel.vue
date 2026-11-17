@@ -7,7 +7,7 @@
  */
 import { computed, nextTick, ref, watch } from "vue";
 import Tile from "./Tile.vue";
-import type { Assistant, AssistantStatus, ChatMsg } from "../composables/useAssistant";
+import { BIG_MODEL, type Assistant, type AssistantStatus, type ChatMsg } from "../composables/useAssistant";
 import { timeAgo } from "../composables/useClipboard";
 
 const props = defineProps<{ assistant: Assistant; active: boolean }>();
@@ -27,17 +27,33 @@ let confirmTimer: number | undefined;
 
 const STATUS_TEXT: Record<AssistantStatus, string> = {
   unsupported: "Asistan şimdilik yalnızca Windows'ta.",
+  disabled: "Asistan kapalı. Ayarlardan açabilirsin.",
   connecting: "Asistan açılıyor…",
   offline: "Asistan servisi çalışmıyor.",
-  "no-ollama": "Ollama kapalı. Başlatınca burası kendiliğinden açılır.",
+  "no-ollama": "Ollama kapalı ya da kurulu değil (ollama.com). Başlatınca burası kendiliğinden açılır.",
   "no-model": "",
   ready: "",
 };
 
 const statusText = computed(() =>
   a.status.value === "no-model"
-    ? `${a.model.value} kurulu değil: ollama pull ${a.model.value}`
+    ? `${a.model.value} kurulu değil.`
     : STATUS_TEXT[a.status.value],
+);
+
+/** Ollama yok ya da model kurulu değil: kurulum yardımı gösterilir. */
+const needsSetup = computed(() => a.status.value === "no-ollama" || a.status.value === "no-model");
+/** Önerilen modelin kurulum komutu. */
+const pullModel = computed(() => a.advice.value?.model ?? a.model.value);
+/** Geçilebilecek kurulu sohbet modelleri (gömme modelleri hariç). */
+const choices = computed(() =>
+  a.installed.value.filter((m) => m !== a.model.value && !/embed/i.test(m)).slice(0, 4),
+);
+/** Hazırken: zayıf makinede büyük model seçiliyse uyarı. */
+const slowWarning = computed(() =>
+  a.advice.value && a.advice.value.level !== "good" && a.model.value === BIG_MODEL
+    ? a.advice.value.text
+    : "",
 );
 
 const glow = computed(() => (a.busy.value ? "var(--c-focus)" : undefined));
@@ -297,13 +313,38 @@ watch(
 
       <!-- Sohbet -->
       <div v-else class="body">
-        <div v-if="!a.ready.value && !a.messages.value.length" class="empty">
+        <div v-if="needsSetup && !a.messages.value.length" class="empty hint setup">
+          <span class="setup-status">
+            <span class="state-dot" :class="a.status.value" aria-hidden="true" />
+            {{ statusText }}
+          </span>
+          <span v-if="a.advice.value" class="advice" :class="a.advice.value.level">
+            {{ a.advice.value.text }}
+          </span>
+          <span v-if="a.hardware.value?.gpu" class="gpu mono">{{ a.hardware.value.gpu }}</span>
+          <span v-if="choices.length" class="model-choices">
+            Kurulu:
+            <button
+              v-for="m in choices"
+              :key="m"
+              class="mini-chip mono"
+              :class="{ recommended: m === a.advice.value?.model }"
+              :title="`${m} kullan`"
+              @click="a.setModel(m)"
+            >
+              {{ m }}
+            </button>
+          </span>
+          <code v-if="!choices.includes(pullModel)" class="pull mono">ollama pull {{ pullModel }}</code>
+        </div>
+        <div v-else-if="!a.ready.value && !a.messages.value.length" class="empty">
           <span class="state-dot" :class="a.status.value" aria-hidden="true" />
           {{ statusText }}
         </div>
         <div v-else-if="!a.messages.value.length" class="empty hint">
           Bir şey sor. Her şey bu bilgisayarda kalır.
           <small class="mono">{{ a.model.value }}</small>
+          <small v-if="slowWarning" class="advice weak">{{ slowWarning }}</small>
         </div>
         <ul v-else ref="list" class="messages" @scroll="onScroll">
           <li v-for="m in a.messages.value" :key="m.id" :class="['msg', m.role]">
@@ -352,7 +393,7 @@ watch(
             ref="input"
             v-model="draft"
             class="prompt"
-            :placeholder="a.ready.value ? 'Sor ve Enter\'a bas…' : 'Asistan hazır değil'"
+            :placeholder="a.ready.value ? 'Sor ve Enter\'a bas…' : statusText || 'Asistan hazır değil'"
             :disabled="!a.ready.value && !a.busy.value"
             spellcheck="false"
             maxlength="4000"
@@ -537,6 +578,57 @@ watch(
   opacity: 0.7;
 }
 
+.setup {
+  gap: 5px;
+}
+
+.setup-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+
+.advice.good {
+  color: var(--c-seen);
+}
+
+.advice.ok,
+.advice.weak {
+  color: var(--c-waiting);
+}
+
+.empty small.advice {
+  opacity: 0.9;
+}
+
+.gpu {
+  font-size: 9.5px;
+  opacity: 0.6;
+}
+
+.model-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.mini-chip.recommended {
+  border-color: var(--c-seen);
+  color: var(--text);
+}
+
+.pull {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 10.5px;
+  color: var(--text);
+  user-select: text;
+}
+
 .state-dot {
   flex: none;
   width: 7px;
@@ -550,7 +642,8 @@ watch(
   animation: blink 1.2s ease-in-out infinite;
 }
 
-.state-dot.unsupported {
+.state-dot.unsupported,
+.state-dot.disabled {
   background: rgba(255, 255, 255, 0.3);
 }
 
