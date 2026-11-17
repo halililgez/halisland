@@ -12,7 +12,7 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 - **Claude Code:** Claude çalışırken kutucuk turuncu parlar, onay beklerken sarıya döner. İş bitince mavi olur, sen adaya bakınca yeşile döner ve söner. Açık adada proje adı, son istemin, şu an ne yaptığı (komut çalıştırıyor, dosya düzenliyor...), neden beklediği ve değişen dosyalar görünür. **Terminale dön** düğmesi Claude'un çalıştığı pencereyi (Windows Terminal, VS Code, Claude masaüstü...) öne getirir.
 - **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
 - **Sekmeler:** Açık adanın üstündeki şeritten **Ana**, **Bugün**, **Kontrol**, **Pano**, **Sistem** ve **Güç** arasında geçilir. Ada kapanınca bir sonraki açılış Ana sekmeyle başlar.
-- **Kontrol (Windows):** Ses seviyesi kaydırıcısı (fare tekerleğiyle de), sessiz düğmesi, 0/25/50/75/100 hızlı seviyeler ve çıkış cihazının adı. Wi-Fi ve Bluetooth'u aç/kapa, bağlı ağın adı. Klavyenin ses tuşlarıyla yapılan değişiklikler de görünür.
+- **Kontrol (Windows):** Ses seviyesi kaydırıcısı (fare tekerleğiyle de), sessiz düğmesi, 0/25/50/75/100 hızlı seviyeler; çıkış aygıtının adına tıklayıp başka bir aygıta (kulaklık, hoparlör, monitör) geçme. Ekran başına parlaklık (harici monitörlerde DDC/CI, dizüstünde Windows'un kendi ayarı) ve gece ışığı. Wi-Fi ve Bluetooth'u aç/kapa, bağlı ağın adı. Klavyenin ses tuşlarıyla yapılan değişiklikler de görünür.
 - **Bugün:** Tarih ve bu haftanın günleri; hava durumu (anlık sıcaklık, durum, en yüksek/en düşük; Open-Meteo, anahtar gerekmez). Konum için **Konumumu kullan** (Windows konum servisi; yaklaşık 1 km'ye yuvarlanır, hava her yenilendiğinde konum da tazelenir) ya da şehir araması; halkalı odak sayacı ve 15/25/45/60 dakika seçici; günün yapılacakları (tamamlananlar ertesi gün kendiliğinden temizlenir).
 - **Pano geçmişi (Windows):** Kopyaladığın metinler, bağlantılar ve görseller Pano sekmesinde birikir. Arama ve Metin / Bağlantı / Görsel filtreleri var. Satıra tıklayınca yeniden panoya kopyalanır. Öğeleri sabitleyebilir, silebilir ya da hepsini temizleyebilirsin. Geçmiş yalnızca bellekte tutulur, diske yazılmaz; uygulama kapanınca gider. Parola yöneticilerinin "izleme" dışı bıraktığı kopyalamalar alınmaz. Ayarlardan "Pano geçmişi" kapatılınca geçmiş silinir.
 - **Sistem:** İşlemci ve bellek halkaları, en çok bellek kullanan dört uygulama (aynı uygulamanın süreçleri tek satırda toplanır), sistem diskinin doluluğu, anlık indirme/yükleme hızı ve bilgisayarın açık kalma süresi. Ölçüm yalnızca sekme açıkken, iki saniyede bir yapılır.
@@ -106,7 +106,8 @@ src/
     useMedia.ts            çalan müzik ve kontroller
     useSystemStats.ts      sistem ölçümleri (sekme açıkken)
     useClipboard.ts        pano geçmişi listesi ve komutları
-    useControls.ts         ses ve radyo durumu, kısılmış yazma
+    useControls.ts         ses, çıkış aygıtı ve radyo durumu
+    useDisplay.ts          parlaklık ve gece ışığı
     useWeather.ts          hava durumu ve şehir arama (Open-Meteo)
     useTodos.ts            yapılacaklar (localStorage)
   utils/color.ts           kapaktan vurgu rengi
@@ -122,7 +123,8 @@ src-tauri/src/
   terminal.rs              Claude'un çalıştığı pencereyi bulma ve öne getirme
   media.rs                 çalan müzik (Windows SMTC)
   clipboard.rs             pano geçmişi (bellekte; Windows izleyicisi)
-  controls.rs              ses (Core Audio), Wi-Fi/Bluetooth (Radios), bağlı ağ
+  controls.rs              ses ve çıkış aygıtı (Core Audio, IPolicyConfig), Wi-Fi/Bluetooth, bağlı ağ
+  display.rs               parlaklık (DDC/CI, WMI) ve gece ışığı
   location.rs              cihaz konumu (Windows konum servisi, ~1 km)
   system.rs                işlemci, bellek, uygulamalar, disk, ağ (sysinfo)
   power.rs                 kilitle, uyku, oturumu kapat, yeniden başlat, kapat

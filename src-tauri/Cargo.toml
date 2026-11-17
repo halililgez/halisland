@@ -28,6 +28,7 @@ base64 = "0.22"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 
 [target.'cfg(windows)'.dependencies]
+windows-core = "0.62"
 windows-numerics = "0.3"
 windows = { version = "0.62", features = [
   "Devices",
@@ -36,7 +37,10 @@ windows = { version = "0.62", features = [
   "Foundation_Collections",
   "Networking",
   "Networking_Connectivity",
+  "Win32_Devices_Display",
   "Win32_Devices_FunctionDiscovery",
+  "Win32_System_Rpc",
+  "Win32_System_Wmi",
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com",

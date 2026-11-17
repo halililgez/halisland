@@ -9,6 +9,12 @@ export interface AudioState {
   device: string;
 }
 
+export interface AudioDevice {
+  id: string;
+  name: string;
+  default: boolean;
+}
+
 export type RadioStatus = "on" | "off" | "disabled" | "missing";
 
 export interface RadiosState {
@@ -121,6 +127,33 @@ export function useControls(active: Ref<boolean>) {
 
   onBeforeUnmount(() => window.clearTimeout(trailing));
 
+  /** Ses çıkış aygıtları; seçici açılınca istenir. */
+  const devices = ref<AudioDevice[]>([]);
+  const switching = ref(false);
+  async function loadDevices() {
+    try {
+      devices.value = await invoke<AudioDevice[]>("audio_devices");
+    } catch (e) {
+      audioError.value = String(e);
+    }
+  }
+
+  async function setDevice(id: string) {
+    if (switching.value) return;
+    switching.value = true;
+    devices.value = devices.value.map((d) => ({ ...d, default: d.id === id }));
+    try {
+      await invoke("set_audio_device", { id });
+      audioError.value = "";
+    } catch (e) {
+      audioError.value = String(e);
+    } finally {
+      switching.value = false;
+      loadDevices();
+      pollAudio();
+    }
+  }
+
   return {
     audio,
     radios,
@@ -128,8 +161,12 @@ export function useControls(active: Ref<boolean>) {
     radioError,
     dragging,
     busy,
+    devices,
+    switching,
     setVolume,
     toggleMute,
     toggleRadio,
+    loadDevices,
+    setDevice,
   };
 }
