@@ -166,6 +166,17 @@ export interface Memory {
   created: number;
 }
 
+export interface SpotifyStatus {
+  configured: boolean;
+  connected: boolean;
+  /** İzin sayfası açık, cevap bekleniyor. */
+  pending: boolean;
+  user: string | null;
+  clientId: string | null;
+  error: string | null;
+  redirectUri: string;
+}
+
 interface StoredMessage {
   id: number;
   role: "user" | "assistant";
@@ -583,6 +594,47 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
     memories.value = memories.value.filter((m) => m.id !== id);
   }
 
+  // ---------- Spotify (doğrudan çalma için hesap bağlantısı) ----------
+  const spotify = ref<SpotifyStatus | null>(null);
+  let spotifyPoll: number | undefined;
+
+  async function refreshSpotify() {
+    const s = await api<SpotifyStatus>("/spotify");
+    if (s) spotify.value = s;
+    return s;
+  }
+
+  /** Tarayıcıda Spotify izin sayfasını açar; izin verilene kadar durumu yoklar. */
+  async function connectSpotify(clientId?: string): Promise<string | null> {
+    const i = await getInfo();
+    if (!i?.supported) return "Asistan çalışmıyor.";
+    try {
+      const res = await fetch(`${i.url}/spotify/login`, {
+        method: "POST",
+        headers: headers(i, true),
+        body: JSON.stringify({ clientId: clientId ?? null }),
+      });
+      if (!res.ok) return ((await res.json().catch(() => null)) as string | null) ?? "Bağlanılamadı.";
+    } catch {
+      return "Asistana ulaşılamadı.";
+    }
+    window.clearInterval(spotifyPoll);
+    const started = Date.now();
+    spotifyPoll = window.setInterval(async () => {
+      const s = await refreshSpotify();
+      if (!s || s.connected || !s.pending || Date.now() - started > 10 * 60_000) window.clearInterval(spotifyPoll);
+    }, 2000);
+    await refreshSpotify();
+    return null;
+  }
+
+  async function disconnectSpotify() {
+    window.clearInterval(spotifyPoll);
+    await api("/spotify", "DELETE");
+    await refreshSpotify();
+  }
+  onBeforeUnmount(() => window.clearInterval(spotifyPoll));
+
   const ready = computed(() => status.value === "ready");
 
   return {
@@ -617,6 +669,10 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
     removeAllConversations,
     refreshMemories,
     removeMemory,
+    spotify,
+    refreshSpotify,
+    connectSpotify,
+    disconnectSpotify,
   };
 }
 

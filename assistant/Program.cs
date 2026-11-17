@@ -25,6 +25,7 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(new Store(Store.DefaultDataDir()));
 builder.Services.AddSingleton<Confirmations>();
 builder.Services.AddSingleton<DesktopTools>();
+builder.Services.AddSingleton(sp => new SpotifyService(port, sp.GetRequiredService<ILogger<SpotifyService>>()));
 builder.Services.AddSingleton<ToolRegistry>();
 // Sağlayıcı açılışta seçilir; değişince Halisland backend'i yeniden başlatır.
 builder.Services.AddSingleton<IChatProvider>(options.Provider switch
@@ -50,7 +51,9 @@ if (token is not null)
     var expected = $"Bearer {token}";
     app.Use(async (ctx, next) =>
     {
-        if (ctx.Request.Headers.Authorization != expected)
+        // Spotify izin sayfası tarayıcıyı buraya yönlendirir (anahtar taşıyamaz);
+        // istek tek kullanımlık "state" ile doğrulanır.
+        if (ctx.Request.Path != "/spotify/callback" && ctx.Request.Headers.Authorization != expected)
         {
             ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return;
@@ -120,6 +123,17 @@ app.MapPost("/chat", async (ChatRequest req, ChatService chat, HttpContext ctx) 
 });
 
 // Araç onayı (ör. dosya açma): akıştaki "confirm" olayına kullanıcının cevabı.
+app.MapGet("/spotify", (SpotifyService s, CancellationToken ct) => s.StatusAsync(ct));
+app.MapPost("/spotify/login", (SpotifyLoginRequest req, SpotifyService s) =>
+    s.BeginLogin(req.ClientId) is { } error ? Results.BadRequest(error) : Results.NoContent());
+app.MapDelete("/spotify", (SpotifyService s) =>
+{
+    s.Disconnect();
+    return Results.NoContent();
+});
+app.MapGet("/spotify/callback", async (string? code, string? state, string? error, SpotifyService s, CancellationToken ct) =>
+    Results.Content(await s.CallbackAsync(code, state, error, ct), "text/html; charset=utf-8"));
+
 app.MapPost("/confirm/{id}", (string id, ConfirmRequest req, Confirmations confirmations) =>
     confirmations.Resolve(id, req.Approved) ? Results.NoContent() : Results.NotFound());
 

@@ -403,8 +403,76 @@ public sealed class DesktopTools(ILogger<DesktopTools> log)
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
         log.LogInformation("web_ac {Url}", url);
         return new ToolResult(
-            $"Varsayılan tarayıcıda yeni sekmede açıldı: {url} (sayfanın içeriğini göremezsin).",
+            $"Varsayılan tarayıcıda yeni sekmede açıldı: {url} (sayfanın içeriğini okuyamazsın; bunu kullanıcıya ayrıca söyleme).",
             $"Tarayıcıda açıldı: {ShortUrl(url)}");
+    }
+
+    private static readonly HttpClient Web = CreateWeb();
+
+    private static HttpClient CreateWeb()
+    {
+        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36");
+        http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("tr-TR,tr;q=0.9");
+        // Avrupa'daki çerez onayı sayfası yerine sonuçlar gelsin (yalnızca gerekli çerezler).
+        http.DefaultRequestHeaders.Add("Cookie", "SOCS=CAI");
+        return http;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex FirstVideo = new(
+        "\"videoRenderer\":\\{\"videoId\":\"([A-Za-z0-9_-]{11})\"");
+
+    private static readonly System.Text.RegularExpressions.Regex VideoTitle = new(
+        "\"title\":\\{\"runs\":\\[\\{\"text\":\"((?:[^\"\\\\]|\\\\.)*)\"");
+
+    /// <summary>
+    /// YouTube'da aramadaki ilk videoyu doğrudan açar (video kendiliğinden başlar).
+    /// Arama sayfası okunur; bulunamazsa arama sonuçları açılır.
+    /// </summary>
+    public async Task<ToolResult> YouTubeAsync(string? query, CancellationToken ct)
+    {
+        var q = string.Join(' ', (query ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (q.Length == 0) return ToolResult.Fail("Aranacak bir şey verilmedi.", "Arama boş");
+        if (q.Length > 200) q = q[..200];
+        var search = "https://www.youtube.com/results?search_query=" + Uri.EscapeDataString(q);
+
+        string? id = null, title = null;
+        try
+        {
+            var html = await Web.GetStringAsync(search + "&hl=tr&gl=TR", ct);
+            var m = FirstVideo.Match(html);
+            if (m.Success)
+            {
+                id = m.Groups[1].Value;
+                var t = VideoTitle.Match(html, m.Index, Math.Min(4000, html.Length - m.Index));
+                if (t.Success)
+                {
+                    using var doc = JsonDocument.Parse("\"" + t.Groups[1].Value + "\"");
+                    title = doc.RootElement.GetString();
+                }
+            }
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            log.LogWarning("YouTube araması okunamadı: {Message}", e.Message);
+        }
+
+        if (id is null)
+        {
+            Process.Start(new ProcessStartInfo(search) { UseShellExecute = true })?.Dispose();
+            return new ToolResult(
+                $"İlk video bulunamadı; '{q}' için YouTube arama sonuçları tarayıcıda açıldı. Kullanıcı istediğine tıklamalı.",
+                $"YouTube'da arandı: {q}");
+        }
+        var url = $"https://www.youtube.com/watch?v={id}";
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+        log.LogInformation("youtube_ac '{Query}' → {Id} {Title}", q, id, title);
+        var name = title ?? q;
+        return new ToolResult(
+            $"YouTube'da ilk sonuç tarayıcıda açıldı ve kendiliğinden başlar: \"{name}\" ({url}). Aradığı video bu " +
+            "değilse kullanıcı arama sonuçlarından seçebilir.",
+            $"YouTube'da açıldı: {name}");
     }
 
     private static string ShortUrl(string url)

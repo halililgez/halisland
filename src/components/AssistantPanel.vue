@@ -3,7 +3,8 @@
  * Asistan sekmesi: yerel modelle (Ollama) ya da bir bulut sağlayıcıyla
  * (Claude, ChatGPT, Gemini) sohbet. Başlıkta sağlayıcı (Model görünümü),
  * Geçmiş, Hafıza, "Düşün" anahtarı ve Yeni; altta mesajlar ve yazma kutusu.
- * Model, Geçmiş ve Hafıza aynı kutucuğun içinde açılır.
+ * Model, Geçmiş ve Hafıza aynı kutucuğun içinde açılır. Model görünümünün
+ * altında Spotify hesabı bağlanır (asistan şarkıyı doğrudan çalabilsin).
  * Enter gönderir, Esc yanıtı durdurur (liste açıksa sohbete döner).
  */
 import { computed, nextTick, ref, watch } from "vue";
@@ -132,6 +133,33 @@ function show(v: View) {
   now.value = Date.now();
   if (v === "history") a.refreshConversations();
   if (v === "memory") a.refreshMemories();
+  if (v === "model") a.refreshSpotify();
+}
+
+// ---------- Spotify ----------
+const spotifyDraft = ref("");
+const spotifyError = ref("");
+const editingSpotify = ref(false);
+const copied = ref(false);
+const sp = computed(() => a.spotify.value);
+/** Client ID girme adımları gösterilsin mi. */
+const spotifySetup = computed(() => !!sp.value && (!sp.value.configured || editingSpotify.value));
+
+async function connectSpotify() {
+  const id = spotifySetup.value ? spotifyDraft.value.trim() : undefined;
+  if (spotifySetup.value && !id) return;
+  spotifyError.value = (await a.connectSpotify(id)) ?? "";
+  if (!spotifyError.value) {
+    spotifyDraft.value = "";
+    editingSpotify.value = false;
+  }
+}
+
+async function copyRedirect() {
+  if (!sp.value) return;
+  await navigator.clipboard.writeText(sp.value.redirectUri).catch(() => {});
+  copied.value = true;
+  window.setTimeout(() => (copied.value = false), 1500);
 }
 
 function newChat() {
@@ -391,6 +419,50 @@ watch(
           >
             {{ m }}
           </button>
+        </div>
+
+        <div v-if="sp" class="spotify">
+          <div class="key-row">
+            <span class="spotify-name">Spotify</span>
+            <span v-if="sp.connected" class="key-ok">Bağlı{{ sp.user ? ` · ${sp.user}` : "" }}</span>
+            <span v-else-if="sp.pending" class="spotify-state">Tarayıcıda izin bekleniyor…</span>
+            <span v-else class="spotify-state">Şarkıları doğrudan çalmak için bağla (Premium)</span>
+            <template v-if="!spotifySetup">
+              <button v-if="!sp.connected" class="mini-chip primary" @click="connectSpotify">Bağlan</button>
+              <button v-if="!sp.connected" class="mini-chip" @click="editingSpotify = true">Client ID</button>
+              <button
+                v-if="sp.connected"
+                class="mini-chip danger"
+                :class="{ armed: confirming === 'spotify' }"
+                @click="confirmThen('spotify', () => a.disconnectSpotify())"
+              >
+                {{ confirming === "spotify" ? "Kesilsin mi?" : "Bağlantıyı kes" }}
+              </button>
+            </template>
+          </div>
+          <template v-if="spotifySetup">
+            <span class="key-help">
+              <span class="mono">developer.spotify.com/dashboard</span>'da bir uygulama oluştur (Web API), Redirect URI
+              olarak
+              <button class="link mono" :title="'Kopyala'" @click="copyRedirect">{{ sp.redirectUri }}</button>
+              {{ copied ? "(kopyalandı)" : "" }} ekle, Client ID'yi buraya yapıştır.
+            </span>
+            <form class="key-row" @submit.prevent="connectSpotify">
+              <input
+                v-model="spotifyDraft"
+                class="prompt key-input mono"
+                placeholder="Client ID"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="Spotify Client ID"
+              />
+              <button class="mini-chip primary" type="submit" :disabled="!spotifyDraft.trim()">Bağlan</button>
+              <button v-if="sp.configured" type="button" class="mini-chip" @click="editingSpotify = false">
+                Vazgeç
+              </button>
+            </form>
+          </template>
+          <p v-if="spotifyError || sp.error" class="error">{{ spotifyError || sp.error }}</p>
         </div>
       </div>
 
@@ -905,6 +977,45 @@ watch(
 
 .model-view .error {
   margin: 0;
+}
+
+.spotify {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.spotify-name {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.spotify-state {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.spotify .key-ok {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: inherit;
+  text-decoration: underline dotted;
+  cursor: pointer;
 }
 
 .model-list {
