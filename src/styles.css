@@ -11,6 +11,8 @@
   --c-done: #4da3ff;
   --c-seen: #43d17a;
   --c-focus: #b58cff;
+  /* Uyarı: dolmak üzere olan halka/disk, onay bekleyen güç düğmesi. */
+  --c-hot: #ff6b6b;
 
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
 
