@@ -1,4 +1,4 @@
-import { ref, watch } from "vue";
+import { ref, watch, type Ref } from "vue";
 
 export interface Todo {
   id: number;
@@ -28,13 +28,12 @@ function load(): Todo[] {
   }
 }
 
-/**
- * Bugünün yapılacakları. WebView'in yerel deposunda (localStorage) tutulur;
- * tamamlananlar ertesi gün kendiliğinden temizlenir.
- */
-export function useTodos() {
-  const todos = ref<Todo[]>(load());
+/** Tek liste: Bugün sekmesi ve asistan (yapilacak aracı) aynı durumu kullanır. */
+let shared: Ref<Todo[]> | null = null;
 
+function state(): Ref<Todo[]> {
+  if (shared) return shared;
+  const todos = ref<Todo[]>(load());
   watch(
     todos,
     (list) => {
@@ -46,11 +45,25 @@ export function useTodos() {
     },
     { deep: true },
   );
+  shared = todos;
+  return todos;
+}
 
-  function add(text: string) {
+/**
+ * Bugünün yapılacakları. WebView'in yerel deposunda (localStorage) tutulur;
+ * tamamlananlar ertesi gün kendiliğinden temizlenir.
+ */
+export function useTodos() {
+  const todos = state();
+
+  function add(text: string): Todo | null {
     const t = text.trim().slice(0, MAX_TEXT);
-    if (!t) return;
-    todos.value.push({ id: Date.now(), text: t, done: false });
+    if (!t) return null;
+    // Aynı milisaniyede iki ekleme (asistan) kimlik çakıştırmasın.
+    const id = Math.max(Date.now(), ...todos.value.map((x) => x.id + 1));
+    const item = { id, text: t, done: false };
+    todos.value.push(item);
+    return item;
   }
 
   function toggle(id: number) {

@@ -77,8 +77,14 @@ public sealed class DesktopTools(ILogger<DesktopTools> log)
         path.Equals(root, StringComparison.OrdinalIgnoreCase)
         || path.StartsWith(root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Gevşek arama: büyük/küçük harf ve aksanlar yok sayılır; "ı" ile "i" de aynı
+    /// sayılır ("toplantı notları" → toplanti-notlari.txt).
+    /// </summary>
     private static bool Contains(string text, string word) =>
-        Tr.CompareInfo.IndexOf(text, word, Loose) >= 0;
+        Tr.CompareInfo.IndexOf(Fold(text), Fold(word), Loose) >= 0;
+
+    private static string Fold(string s) => s.Replace('ı', 'i').Replace('İ', 'i').Replace('I', 'i');
 
     private static string[] Words(string query) =>
         query.Split([' ', ',', ';', '*', '"', '\''], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -87,7 +93,7 @@ public sealed class DesktopTools(ILogger<DesktopTools> log)
             .ToArray();
 
     /// <summary>"masaustu", "belgeler"... → klasör yolu (bilinmiyorsa null: tüm kökler).</summary>
-    private static string? Place(string? place)
+    public static string? Place(string? place)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var path = place?.Trim().ToLowerInvariant() switch
@@ -177,8 +183,11 @@ public sealed class DesktopTools(ILogger<DesktopTools> log)
 
     public sealed record OpenCheck(string? Path, bool IsDirectory, string? Error);
 
-    /// <summary>Açılabilir mi: var, kullanıcı klasörlerinde ve program/betik değil.</summary>
-    public OpenCheck CheckOpen(string? raw)
+    /// <summary>
+    /// Yolun kullanıcı klasörlerinden birinde olduğunu ve (istenirse) var olduğunu
+    /// denetler (dosya_ac, dosya_oku, dosya_islem).
+    /// </summary>
+    public static OpenCheck CheckPath(string? raw, bool mustExist = true)
     {
         var path = raw?.Trim().Trim('"');
         if (string.IsNullOrEmpty(path)) return new OpenCheck(null, false, "Yol verilmedi.");
@@ -186,10 +195,24 @@ public sealed class DesktopTools(ILogger<DesktopTools> log)
             return new OpenCheck(null, false, "Tam bir yerel yol gerekli; önce dosya_ara ile bul.");
         path = Path.GetFullPath(path);
         if (!Roots.Any(r => IsUnder(path, r)))
-            return new OpenCheck(null, false, "Yalnızca kullanıcı klasörlerindeki (Masaüstü, Belgeler, İndirilenler...) dosyalar açılabilir.");
-
+            return new OpenCheck(null, false, "Yalnızca kullanıcı klasörlerindeki (Masaüstü, Belgeler, İndirilenler...) dosyalarla çalışılabilir.");
         var isDir = Directory.Exists(path);
-        if (!isDir && !File.Exists(path)) return new OpenCheck(null, false, $"Böyle bir dosya yok: {path}");
+        if (mustExist && !isDir && !File.Exists(path)) return new OpenCheck(null, false, $"Böyle bir dosya yok: {path}");
+        return new OpenCheck(path, isDir, null);
+    }
+
+    /// <summary>Kullanıcı klasörlerinin kendisi mi (Masaüstü, Belgeler...); bunlar taşınmaz, silinmez.</summary>
+    public static bool IsRootFolder(string path) =>
+        Roots.Concat(new[] { "masaustu", "belgeler", "indirilenler", "resimler", "muzik", "videolar" }.Select(Place).OfType<string>())
+            .Any(r => path.TrimEnd('\\').Equals(r.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Açılabilir mi: var, kullanıcı klasörlerinde ve program/betik değil.</summary>
+    public OpenCheck CheckOpen(string? raw)
+    {
+        var check = CheckPath(raw);
+        if (check.Error is not null) return check;
+        var path = check.Path!;
+        var isDir = check.IsDirectory;
         if (!isDir && BlockedExtensions.Contains(Path.GetExtension(path)))
             return new OpenCheck(null, false,
                 $"Açılmadı: {Path.GetExtension(path)} dosyalarını (program, betik, kısayol) asistan güvenlik için hiç açmaz; " +

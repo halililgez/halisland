@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
+import type { ClientToolRunner } from "./assistantTools";
 import { invoke } from "@tauri-apps/api/core";
 
 /**
@@ -107,6 +108,7 @@ type StreamEvent =
   | { type: "retry" }
   | { type: "confirm"; id: string; message: string; text: string }
   | { type: "confirm-end"; id: string; approved: boolean }
+  | { type: "client-tool"; id: string; message: string; text: string }
   | { type: "done"; tokensPerSec?: number }
   | { type: "title"; text: string; conversationId: number }
   | { type: "error"; message: string };
@@ -198,7 +200,13 @@ function save(key: string, value: string | null) {
   }
 }
 
-export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provider: Ref<string>) {
+export function useAssistant(
+  active: Ref<boolean>,
+  enabled: Ref<boolean>,
+  provider: Ref<string>,
+  /** Halisland'in kendi özelliklerini kullanan araçlar (assistantTools.ts). */
+  runTool?: ClientToolRunner,
+) {
   const status = ref<AssistantStatus>(enabled.value ? "connecting" : "disabled");
   const model = ref("");
   /** Sağlayıcının modelleri (Ollama'da kurulu olanlar). */
@@ -482,6 +490,9 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
           { id: e.id, question: e.message, detail: e.text, state: "pending" },
         ];
         break;
+      case "client-tool":
+        void runClientTool(e.id, e.message, e.text);
+        break;
       case "confirm-end": {
         const c = reply.confirms?.find((x) => x.id === e.id);
         if (c) c.state = e.approved ? "approved" : "denied";
@@ -500,6 +511,27 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
         reply.error = e.message;
         break;
     }
+  }
+
+  /** Backend'in istediği aracı arayüzde çalıştırır ve sonucu geri yollar. */
+  async function runClientTool(id: string, name: string, argsJson: string) {
+    let args: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(argsJson || "{}");
+      if (parsed && typeof parsed === "object") args = parsed as Record<string, unknown>;
+    } catch {
+      /* argümansız çalışır */
+    }
+    const result = runTool
+      ? await runTool(name, args)
+      : { ok: false, text: "Bu araç burada çalışmıyor.", note: "Araç çalışmadı" };
+    const i = await getInfo();
+    if (!i?.supported) return;
+    await fetch(`${i.url}/tool-result/${id}`, {
+      method: "POST",
+      headers: headers(i, true),
+      body: JSON.stringify(result),
+    }).catch(() => {});
   }
 
   /** Onay isteyen araca cevap (Aç / Vazgeç). */

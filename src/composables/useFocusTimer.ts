@@ -35,8 +35,12 @@ export function useFocusTimer(minutes: MaybeRefOrGetter<number> = 25) {
     ticker = undefined;
   }
 
-  function start() {
-    if (state.value === "finished") remainingMs.value = durationMs.value;
+  /** `minutes` verilirse (asistan) sayaç o süreyle baştan başlar. */
+  function start(minutes?: number) {
+    if (minutes && minutes > 0) {
+      durationMs.value = Math.round(minutes * 60_000);
+      remainingMs.value = durationMs.value;
+    } else if (state.value === "finished") remainingMs.value = durationMs.value;
     endsAt = Date.now() + remainingMs.value;
     state.value = "running";
     stopTicker();
@@ -51,12 +55,15 @@ export function useFocusTimer(minutes: MaybeRefOrGetter<number> = 25) {
 
   function reset() {
     stopTicker();
+    // Asistanın verdiği özel süre sıfırlanınca ayardaki süreye dönülür.
+    durationMs.value = toValue(minutes) * 60_000;
     remainingMs.value = durationMs.value;
     state.value = "idle";
   }
 
   function toggle() {
-    state.value === "running" ? pause() : start();
+    if (state.value === "running") pause();
+    else start();
   }
 
   onBeforeUnmount(stopTicker);
@@ -72,5 +79,5 @@ export function useFocusTimer(minutes: MaybeRefOrGetter<number> = 25) {
     Math.min(1, Math.max(0, 1 - remainingMs.value / durationMs.value)),
   );
 
-  return { state, label, progress, start, pause, reset, toggle };
+  return { state, label, progress, remainingMs, start, pause, reset, toggle };
 }
