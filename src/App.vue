@@ -63,16 +63,13 @@ function toggleSettings() {
 }
 
 function settingsAction(id: string) {
-  const run = () =>
-    invoke("settings_action", { id }).catch((e) => console.error("settings_action", e));
-  if (id === "toggle") {
-    // Önce ada kapansın; yoksa tepsiden geri açılınca açık hâlde gelir.
-    island.collapse();
-    window.setTimeout(run, 450);
-  } else {
-    run();
-  }
+  invoke("settings_action", { id }).catch((e) => console.error("settings_action", e));
 }
+
+/** Konum kilitliyken sürükleme alanları kaldırılır, ada yerinden oynamaz. */
+const drag = computed(() =>
+  settings.value.locked ? {} : { "data-tauri-drag-region": "" },
+);
 
 const islandStyle = computed(() => {
   const size = island.expanded.value ? EXPANDED : COMPACT;
@@ -88,14 +85,14 @@ const islandStyle = computed(() => {
   <div
     ref="islandEl"
     class="island"
-    :class="{ expanded: island.expanded.value, tinted: !!accent }"
+    :class="{ expanded: island.expanded.value, tinted: !!accent, locked: settings.locked }"
     :style="islandStyle"
     @mouseenter="island.hoverIn"
     @mouseleave="island.hoverOut"
     @contextmenu.prevent="openSettings"
   >
     <!-- Kompakt görünüm -->
-    <div v-if="!island.expanded.value" class="compact" data-tauri-drag-region>
+    <div v-if="!island.expanded.value" class="compact" v-bind="drag">
       <span class="left">
         <span
           class="dot"
@@ -104,7 +101,7 @@ const islandStyle = computed(() => {
         />
         <img v-if="media.state.value.active && media.artwork.value" class="mini-cover" :src="media.artwork.value" alt="" />
       </span>
-      <span class="compact-time mono" data-tauri-drag-region>{{ time }}</span>
+      <span class="compact-time mono" v-bind="drag">{{ time }}</span>
       <span v-if="focusActive" class="compact-focus mono">{{ focus.label.value }}</span>
       <span v-else-if="media.state.value.playing" class="eq" aria-hidden="true">
         <i /><i /><i /><i />
@@ -114,7 +111,7 @@ const islandStyle = computed(() => {
 
     <!-- Genişletilmiş görünüm -->
     <div v-else class="expanded-view">
-      <header class="header" data-tauri-drag-region>
+      <header class="header" v-bind="drag">
         <button v-if="view === 'settings'" class="back" @click="view = 'main'">
           <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
             <path
@@ -128,17 +125,36 @@ const islandStyle = computed(() => {
           </svg>
           Ayarlar
         </button>
-        <span v-else class="mono" data-tauri-drag-region>{{ date }}</span>
-        <span class="brand" data-tauri-drag-region>Halisland</span>
-        <span class="header-right" data-tauri-drag-region>
+        <span v-else class="mono" v-bind="drag">{{ date }}</span>
+        <span class="brand" v-bind="drag">Halisland</span>
+        <span class="header-right" v-bind="drag">
           <template v-if="view === 'settings'">
             <button class="chip" @click="settingsAction('reset-position')">Konumu sıfırla</button>
-            <button class="chip" @click="settingsAction('toggle')">Gizle</button>
             <button class="chip danger" @click="settingsAction('quit')">Çıkış</button>
           </template>
-          <span v-else class="mono" data-tauri-drag-region>{{ time }}</span>
+          <span v-else class="mono" v-bind="drag">{{ time }}</span>
+          <!-- Konum kilidi: hızlı erişim için dişlinin hemen yanında. -->
           <button
-            class="gear"
+            class="icon-btn"
+            :class="{ active: settings.locked }"
+            :title="settings.locked ? 'Konum kilitli; sürüklemek için kilidi aç' : 'Konumu kilitle'"
+            :aria-label="settings.locked ? 'Konum kilidini aç' : 'Konumu kilitle'"
+            :aria-pressed="settings.locked"
+            @click="settingsAction('lock')"
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2.5" fill="currentColor" />
+              <path
+                :d="settings.locked ? 'M8 11V8a4 4 0 0 1 8 0v3' : 'M8 11V8a4 4 0 0 1 7.6-1.7'"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          <button
+            class="gear icon-btn"
             :class="{ active: view === 'settings' }"
             title="Ayarlar"
             aria-label="Ayarlar"
@@ -371,7 +387,8 @@ const islandStyle = computed(() => {
   gap: 8px;
 }
 
-.gear {
+/* Başlıktaki yuvarlak simge düğmeleri: kilit ve dişli. */
+.icon-btn {
   display: grid;
   place-items: center;
   width: 20px;
@@ -384,8 +401,12 @@ const islandStyle = computed(() => {
     color 0.2s ease;
 }
 
-.gear:hover,
-.gear.active {
+.icon-btn + .icon-btn {
+  margin-left: -4px;
+}
+
+.icon-btn:hover,
+.icon-btn.active {
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
 }
@@ -456,6 +477,12 @@ const islandStyle = computed(() => {
 
 .header .chip:hover {
   color: var(--text);
+}
+
+/* Kilitliyken sürükleme yok; el imleci de gösterilmez. */
+.island.locked .compact,
+.island.locked .header {
+  cursor: default;
 }
 
 .header .chip.danger:hover {

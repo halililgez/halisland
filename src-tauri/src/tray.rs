@@ -26,6 +26,7 @@ pub struct TrayItems {
     tint: CheckMenuItem<Wry>,
     autostart: CheckMenuItem<Wry>,
     claude: CheckMenuItem<Wry>,
+    locked: CheckMenuItem<Wry>,
     toggle: MenuItem<Wry>,
 }
 
@@ -73,6 +74,8 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         crate::hooks::claude_hooks_installed(app.clone()),
         None::<&str>,
     )?;
+    let locked =
+        CheckMenuItem::with_id(app, "lock", "Konumu kilitle", true, s.locked, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "Adayı gizle", true, None::<&str>)?;
 
     let focus_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
@@ -93,6 +96,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         app,
         &[
             &toggle,
+            &locked,
             &MenuItem::with_id(app, "reset-position", "Konumu sıfırla", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &focus_menu,
@@ -121,6 +125,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         tint,
         autostart,
         claude,
+        locked,
         toggle,
     }))));
     Ok(())
@@ -136,6 +141,7 @@ fn handle(app: &AppHandle, id: &str) {
         "quit" => app.exit(0),
         "toggle" => toggle_window(app),
         "reset-position" => reset_position(app),
+        "lock" => settings::update(app, |s| s.locked = !s.locked),
         "tint" => settings::update(app, |s| s.tint = !s.tint),
         "claude-hooks" => {
             let enable = !crate::hooks::claude_hooks_installed(app.clone());
@@ -160,7 +166,7 @@ fn handle(app: &AppHandle, id: &str) {
 }
 
 /// Adanın ayar panelinden gelen işlem. Kimlikler tepsi menüsündekilerle
-/// aynıdır: `toggle`, `reset-position`, `tint`, `claude-hooks`, `autostart`,
+/// aynıdır: `toggle`, `lock`, `reset-position`, `tint`, `claude-hooks`, `autostart`,
 /// `quit`, `focus-<dakika>`, `glass-<mod>`.
 #[tauri::command]
 pub fn settings_action(app: AppHandle, id: String) {
@@ -199,4 +205,5 @@ pub fn sync(app: &AppHandle, s: &Settings) {
     }
     let _ = items.tint.set_checked(s.tint);
     let _ = items.autostart.set_checked(s.autostart);
+    let _ = items.locked.set_checked(s.locked);
 }
