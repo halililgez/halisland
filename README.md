@@ -11,6 +11,20 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 - **Odak sayacı:** 25 dakikalık sayaç (başlat / duraklat / sıfırla). Çalışırken kompakt adada kalan süre görünür.
 - **Claude Code:** Claude çalışırken kutucuk turuncu parlar, onay beklerken sarıya döner. İş bitince mavi olur, sen adaya bakınca yeşile döner ve söner. Açık adada proje adı, son istemin, şu an ne yaptığı (komut çalıştırıyor, dosya düzenliyor...), neden beklediği ve değişen dosyalar görünür. **Terminale dön** düğmesi Claude'un çalıştığı pencereyi (Windows Terminal, VS Code, Claude masaüstü...) öne getirir.
 - **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
+- **Tepsi menüsü ve ayarlar:** Görev çubuğundaki Halisland simgesine sağ tıkla: adayı gizle/göster, konumu sıfırla, odak süresi, cam efekti (buzlu / sade / kapalı), kapak rengi, oturum açılınca başlat, çıkış. Adayı sürüklediğin yer hatırlanır.
+
+## Kurulum (Windows)
+
+[Releases](https://github.com/halililgez/halisland/releases) sayfasından `Halisland_<sürüm>_x64-setup.exe` dosyasını indirip çalıştır. Yönetici izni istemez, yalnızca senin kullanıcına kurulur.
+
+Yeni sürüm çıkarmak için `src-tauri/tauri.conf.json` ve `package.json` içindeki sürümü artır, sonra:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+GitHub Actions kurulum dosyasını derleyip **taslak** bir release oluşturur; GitHub'da kontrol edip yayınlarsın.
 
 ## Geliştirme
 
@@ -71,12 +85,15 @@ src/
     useClock.ts            saat ve tarih
     useFocusTimer.ts       odak sayacı
     useClaudeStatus.ts     Claude Code durum makinesi
+    useSettings.ts         ayarları Rust'tan okur
     useMedia.ts            çalan müzik ve kontroller
   utils/color.ts           kapaktan vurgu rengi
 src-tauri/src/
   lib.rs                   uygulama kurulumu
   island.rs                pencere konumu ve boyutu (resize_island komutu)
   glass.rs                 cam efekti (Windows acrylic + SetWindowRgn)
+  settings.rs              ayarlar (settings.json), konum hatırlama, açılışta başlatma
+  tray.rs                  tepsi simgesi ve menüsü
   claude.rs                Claude Code hook sunucusu (port 47821), oturum durumu
   terminal.rs              Claude'un çalıştığı pencereyi bulma ve öne getirme
   media.rs                 çalan müzik (Windows SMTC)
