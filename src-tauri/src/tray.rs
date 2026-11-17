@@ -79,7 +79,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let glass_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
         glass.iter().map(|(_, i)| i as &dyn tauri::menu::IsMenuItem<Wry>).collect();
     let focus_menu = Submenu::with_items(app, "Odak süresi", true, &focus_refs)?;
-    let glass_menu = Submenu::with_items(app, "Cam efekti", true, &glass_refs)?;
+    // Windows 11'de bulanıklık oval şekle uymuyor (glass.rs); seçenek pasif.
+    let glass_ok = crate::glass::blur_supported();
+    let glass_menu = Submenu::with_items(
+        app,
+        if glass_ok { "Cam efekti" } else { "Cam efekti (bu sistemde yok)" },
+        glass_ok,
+        &glass_refs,
+    )?;
 
     let menu = Menu::with_items(
         app,
