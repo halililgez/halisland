@@ -118,6 +118,16 @@ export function useClaudeStatus() {
 
   listen<ClaudeInfo>("claude-status", (e) => receive(e.payload)).then((fn) => (unlisten = fn));
 
+  /** Hook'lar ~/.claude/settings.json'a kurulu mu? (Menüden kurulur.) */
+  const connected = ref(true);
+  let unlistenHooks: UnlistenFn | undefined;
+  invoke<boolean>("claude_hooks_installed")
+    .then((v) => (connected.value = v))
+    .catch(() => {});
+  listen<boolean>("claude-hooks-changed", (e) => (connected.value = e.payload)).then(
+    (fn) => (unlistenHooks = fn),
+  );
+
   // Uygulama yeniden yüklendiyse kaçırılan son durumu al.
   invoke<ClaudeInfo>("claude_status")
     .then((s) => {
@@ -127,6 +137,7 @@ export function useClaudeStatus() {
 
   onBeforeUnmount(() => {
     unlisten?.();
+    unlistenHooks?.();
     window.clearInterval(clock);
     if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
   });
@@ -159,5 +170,5 @@ export function useClaudeStatus() {
     return "";
   });
 
-  return { state, info, label, detail, elapsed, markSeen, focusTerminal };
+  return { state, info, label, detail, elapsed, connected, markSeen, focusTerminal };
 }

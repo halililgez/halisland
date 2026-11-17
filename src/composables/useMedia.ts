@@ -63,6 +63,14 @@ export function useMedia() {
     position.value = s.durationMs > 0 ? Math.min(p, s.durationMs) : p;
   }, 250);
 
+  type Artwork = { trackKey: string; dataUrl: string };
+
+  async function applyArtwork(a: Artwork | null) {
+    if (!a || a.trackKey !== state.value.trackKey) return;
+    artwork.value = a.dataUrl;
+    accent.value = a.dataUrl ? await accentFromImage(a.dataUrl) : undefined;
+  }
+
   listen<MediaState>("media-update", (e) => {
     const prevKey = state.value.trackKey;
     state.value = e.payload;
@@ -72,14 +80,17 @@ export function useMedia() {
       // Yeni şarkının kapağı gelene kadar eskisini gösterme.
       artwork.value = "";
       accent.value = undefined;
+      // Kapak olayı daha önce gelmiş olabilir (ör. açılışta, biz dinlemeye
+      // başlamadan). Rust'taki son kapağı iste.
+      invoke<Artwork | null>("media_artwork")
+        .then(applyArtwork)
+        .catch(() => {});
     }
   }).then((fn) => unlisteners.push(fn));
 
-  listen<{ trackKey: string; dataUrl: string }>("media-artwork", async (e) => {
-    if (e.payload.trackKey !== state.value.trackKey) return;
-    artwork.value = e.payload.dataUrl;
-    accent.value = e.payload.dataUrl ? await accentFromImage(e.payload.dataUrl) : undefined;
-  }).then((fn) => unlisteners.push(fn));
+  listen<Artwork>("media-artwork", (e) => applyArtwork(e.payload)).then((fn) =>
+    unlisteners.push(fn),
+  );
 
   onBeforeUnmount(() => {
     window.clearInterval(ticker);

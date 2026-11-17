@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { useGlass } from "./composables/useGlass";
 import { useSettings } from "./composables/useSettings";
 import Tile from "./components/Tile.vue";
@@ -43,6 +44,11 @@ const focusColor = computed(() =>
     : undefined,
 );
 
+/** Ayar menüsü (tepsi menüsünün aynısı) imlecin olduğu yerde açılır. */
+function openMenu() {
+  invoke("open_menu").catch((e) => console.error("open_menu", e));
+}
+
 const islandStyle = computed(() => {
   const size = island.expanded.value ? EXPANDED : COMPACT;
   return {
@@ -61,6 +67,7 @@ const islandStyle = computed(() => {
     :style="islandStyle"
     @mouseenter="island.hoverIn"
     @mouseleave="island.hoverOut"
+    @contextmenu.prevent="openMenu"
   >
     <!-- Kompakt görünüm -->
     <div v-if="!island.expanded.value" class="compact" data-tauri-drag-region>
@@ -85,7 +92,18 @@ const islandStyle = computed(() => {
       <header class="header" data-tauri-drag-region>
         <span class="mono" data-tauri-drag-region>{{ date }}</span>
         <span class="brand" data-tauri-drag-region>Halisland</span>
-        <span class="mono" data-tauri-drag-region>{{ time }}</span>
+        <span class="header-right" data-tauri-drag-region>
+          <span class="mono" data-tauri-drag-region>{{ time }}</span>
+          <button class="gear" title="Ayarlar" aria-label="Ayarlar" @click="openMenu">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"
+                transform="translate(-1 0)"
+              />
+            </svg>
+          </button>
+        </span>
       </header>
 
       <div class="tiles">
@@ -128,6 +146,7 @@ const islandStyle = computed(() => {
             :label="claude.label.value"
             :detail="claude.detail.value"
             :elapsed="claude.elapsed.value"
+            :connected="claude.connected.value"
             @focus="claude.focusTerminal"
           />
         </Tile>
@@ -283,6 +302,30 @@ const islandStyle = computed(() => {
   font-size: 11px;
   color: var(--text-dim);
   cursor: grab;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gear {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.gear:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
 }
 
 .brand {

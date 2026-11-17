@@ -11,7 +11,7 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 - **Odak sayacı:** 25 dakikalık sayaç (başlat / duraklat / sıfırla). Çalışırken kompakt adada kalan süre görünür.
 - **Claude Code:** Claude çalışırken kutucuk turuncu parlar, onay beklerken sarıya döner. İş bitince mavi olur, sen adaya bakınca yeşile döner ve söner. Açık adada proje adı, son istemin, şu an ne yaptığı (komut çalıştırıyor, dosya düzenliyor...), neden beklediği ve değişen dosyalar görünür. **Terminale dön** düğmesi Claude'un çalıştığı pencereyi (Windows Terminal, VS Code, Claude masaüstü...) öne getirir.
 - **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
-- **Tepsi menüsü ve ayarlar:** Görev çubuğundaki Halisland simgesine sağ tıkla: adayı gizle/göster, konumu sıfırla, odak süresi, cam efekti (buzlu / sade / kapalı), kapak rengi, oturum açılınca başlat, çıkış. Adayı sürüklediğin yer hatırlanır.
+- **Ayarlar:** Adaya sağ tıkla, açık adadaki dişliye bas ya da görev çubuğundaki Halisland simgesine sağ tıkla (Windows 11 bu simgeyi `^` alanına saklayabilir): adayı gizle/göster, konumu sıfırla, odak süresi, cam efekti (buzlu / sade / kapalı), kapak rengi, Claude Code'u bağla, oturum açılınca başlat, çıkış. Adayı sürüklediğin yer hatırlanır.
 
 ## Kurulum (Windows)
 
@@ -45,7 +45,11 @@ npm run tauri build                # kurulum dosyası
 
 ## Claude Code bağlantısı
 
-Halisland, `127.0.0.1:47821` adresinde küçük bir yerel sunucu açar. Claude Code hook'ları her olayın JSON'unu buraya gönderir. `~/.claude/settings.json` dosyana şunu ekle:
+Halisland, `127.0.0.1:47821` adresinde küçük bir yerel sunucu açar. Claude Code hook'ları her olayın JSON'unu buraya gönderir.
+
+**Kolay yol:** Adaya sağ tıkla (ya da açık adadaki dişliye bas) → **Claude Code'u bağla**. Halisland hook'ları `~/.claude/settings.json`'a kendisi ekler. Dosyadaki diğer ayarlara dokunmaz, önceki hâlini `settings.json.halisland.bak` olarak yedekler. Aynı maddeye tekrar basınca hook'lar kaldırılır. Yeni açılan Claude Code oturumları bağlanır.
+
+Elle kurmak istersen `~/.claude/settings.json` dosyana şunu ekle:
 
 ```json
 {
@@ -93,7 +97,8 @@ src-tauri/src/
   island.rs                pencere konumu ve boyutu (resize_island komutu)
   glass.rs                 cam efekti (Windows acrylic + SetWindowRgn)
   settings.rs              ayarlar (settings.json), konum hatırlama, açılışta başlatma
-  tray.rs                  tepsi simgesi ve menüsü
+  tray.rs                  tepsi simgesi ve menüsü (sağ tık menüsü de bu)
+  hooks.rs                 Claude Code hook'larını ~/.claude/settings.json'a kurar/kaldırır
   claude.rs                Claude Code hook sunucusu (port 47821), oturum durumu
   terminal.rs              Claude'un çalıştığı pencereyi bulma ve öne getirme
   media.rs                 çalan müzik (Windows SMTC)

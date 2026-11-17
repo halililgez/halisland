@@ -1,5 +1,6 @@
 mod claude;
 mod glass;
+mod hooks;
 mod island;
 mod media;
 mod settings;
@@ -29,8 +30,11 @@ pub fn run() {
             island::cursor_over_island,
             glass::set_glass,
             glass::set_island_shape,
+            hooks::claude_hooks_installed,
             media::media_control,
-            settings::get_settings
+            media::media_artwork,
+            settings::get_settings,
+            tray::open_menu
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Moved(_) = event
@@ -58,6 +62,7 @@ pub fn run() {
             window.show()?;
 
             tray::setup(&handle)?;
+            glass::start_frame_guard(handle.clone());
 
             // Claude Code hook'larını dinleyen küçük yerel HTTP sunucusu.
             claude::start_server(handle.clone());

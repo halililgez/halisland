@@ -8,6 +8,8 @@ const props = defineProps<{
   label: string;
   detail: string;
   elapsed: string;
+  /** Hook'lar kurulu mu? Değilse nasıl bağlanacağını söyleriz. */
+  connected: boolean;
 }>();
 
 const emit = defineEmits<{ focus: [] }>();
@@ -19,8 +21,14 @@ const others = computed(() => Math.max(0, props.info.sessions - 1));
 
 <template>
   <div v-if="idle" class="idle">
-    <div class="big">{{ label }}</div>
-    <div class="sub">Claude Code bekleniyor</div>
+    <template v-if="connected">
+      <div class="big">{{ label }}</div>
+      <div class="sub">Claude Code bekleniyor</div>
+    </template>
+    <template v-else>
+      <div class="big">Bağlı değil</div>
+      <div class="sub">Sağ tık → "Claude Code'u bağla"</div>
+    </template>
   </div>
 
   <div v-else class="claude">
