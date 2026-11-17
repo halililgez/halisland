@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+# Fork'lardan gelen PR'lar da dahil, iş akışı yalnızca okuma yetkisiyle çalışır.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Derleme (${{ matrix.os }})

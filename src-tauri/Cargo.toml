@@ -2,7 +2,9 @@
 name = "halisland"
 version = "0.1.0"
 description = "Halisland - Dynamic Island for Windows & macOS"
-authors = ["Halil"]
+authors = ["Halil İlgez"]
+license = "MIT"
+repository = "https://github.com/halililgez/halisland"
 edition = "2024"
 
 [lib]

@@ -1,0 +1,36 @@
+name: Hata bildirimi
+description: Bir şey beklendiği gibi çalışmıyor
+labels: ["bug"]
+body:
+  - type: textarea
+    id: ne-oldu
+    attributes:
+      label: Ne oldu?
+      description: Ne bekliyordun, ne gördün?
+    validations:
+      required: true
+  - type: textarea
+    id: adimlar
+    attributes:
+      label: Nasıl tekrarlanır?
+      placeholder: |
+        1. Adayı aç
+        2. ...
+  - type: input
+    id: surum
+    attributes:
+      label: Halisland sürümü
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: isletim-sistemi
+    attributes:
+      label: İşletim sistemi
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: ekran
+    attributes:
+      label: Ekran görüntüsü / ek bilgi
