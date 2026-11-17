@@ -51,6 +51,7 @@ public sealed record Memory(long Id, string Text, long Created);
 /// "token" (cevap parçası), "tool" (araç çalıştı; Text kullanıcıya gösterilecek özet; Approved false ise iş yapılmadı),
 /// "confirm" (araç kullanıcı onayı bekliyor: Id, Message soru, Text ayrıntı),
 /// "confirm-end" (onay cevaplandı ya da süresi doldu: Id, Approved),
+/// "client-tool" (arayüz bu aracı çalıştırsın: Id, Message araç adı, Text argümanlar JSON; sonuç POST /tool-result/{id}),
 /// "retry" (model araç çağırmadan bir iş yaptığını söyledi; yazılan cevap silinir, yenisi gelir),
 /// "done" (cevap bitti, istatistikler), "title" (sohbetin yeni başlığı) ya da "error".
 /// </summary>
@@ -66,6 +67,9 @@ public sealed record StreamEvent(
 
 /// <summary>Onay bekleyen araca kullanıcının cevabı (POST /confirm/{id}).</summary>
 public sealed record ConfirmRequest(bool Approved);
+
+/// <summary>Arayüzde çalışan aracın sonucu (POST /tool-result/{id}): modele giden metin, kullanıcıya not.</summary>
+public sealed record ClientToolResult(bool Ok, string Text, string? Note = null);
 
 // ---------- Ollama API türleri (snake_case) ----------
 
@@ -129,6 +133,7 @@ public sealed record OllamaError([property: JsonPropertyName("error")] string? E
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ChatRequest))]
 [JsonSerializable(typeof(ConfirmRequest))]
+[JsonSerializable(typeof(ClientToolResult))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(StreamEvent))]
 [JsonSerializable(typeof(ConversationInfo[]))]

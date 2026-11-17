@@ -66,22 +66,7 @@ export function useWeather(city: Ref<WeatherCity | null>, active: Ref<boolean>) 
       }
     }
     try {
-      const url =
-        "https://api.open-meteo.com/v1/forecast" +
-        `?latitude=${c.latitude}&longitude=${c.longitude}` +
-        "&current=temperature_2m,weather_code,is_day" +
-        "&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto";
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const d = await res.json();
-      weather.value = {
-        temp: d.current.temperature_2m,
-        code: d.current.weather_code,
-        isDay: d.current.is_day === 1,
-        min: d.daily.temperature_2m_min[0],
-        max: d.daily.temperature_2m_max[0],
-        fetchedAt: Date.now(),
-      };
+      weather.value = await fetchWeather(c);
       key = cityKey(c);
     } catch (e) {
       console.error("weather", e);
@@ -110,6 +95,26 @@ export function useWeather(city: Ref<WeatherCity | null>, active: Ref<boolean>) 
   );
 
   return { weather, loading, error, reload: load };
+}
+
+/** Open-Meteo'dan anlık hava (Bugün sekmesi ve asistanın durum aracı). */
+export async function fetchWeather(c: WeatherCity): Promise<Weather> {
+  const url =
+    "https://api.open-meteo.com/v1/forecast" +
+    `?latitude=${c.latitude}&longitude=${c.longitude}` +
+    "&current=temperature_2m,weather_code,is_day" +
+    "&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const d = await res.json();
+  return {
+    temp: d.current.temperature_2m,
+    code: d.current.weather_code,
+    isDay: d.current.is_day === 1,
+    min: d.daily.temperature_2m_min[0],
+    max: d.daily.temperature_2m_max[0],
+    fetchedAt: Date.now(),
+  };
 }
 
 function cityKey(c: WeatherCity) {

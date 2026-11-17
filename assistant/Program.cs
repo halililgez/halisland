@@ -24,7 +24,10 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResol
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(new Store(Store.DefaultDataDir()));
 builder.Services.AddSingleton<Confirmations>();
+builder.Services.AddSingleton<ClientTools>();
 builder.Services.AddSingleton<DesktopTools>();
+builder.Services.AddSingleton<FileTools>();
+builder.Services.AddSingleton<SystemTools>();
 builder.Services.AddSingleton<ToolRegistry>();
 // Sağlayıcı açılışta seçilir; değişince Halisland backend'i yeniden başlatır.
 builder.Services.AddSingleton<IChatProvider>(options.Provider switch
@@ -122,6 +125,10 @@ app.MapPost("/chat", async (ChatRequest req, ChatService chat, HttpContext ctx) 
 // Araç onayı (ör. dosya açma): akıştaki "confirm" olayına kullanıcının cevabı.
 app.MapPost("/confirm/{id}", (string id, ConfirmRequest req, Confirmations confirmations) =>
     confirmations.Resolve(id, req.Approved) ? Results.NoContent() : Results.NotFound());
+
+// Arayüzde çalışan aracın sonucu (ses, parlaklık, odak, hatırlatıcı...): akıştaki "client-tool" olayına cevap.
+app.MapPost("/tool-result/{id}", (string id, ClientToolResult req, ClientTools client) =>
+    client.Resolve(id, req) ? Results.NoContent() : Results.NotFound());
 
 // ---------- Geçmiş ----------
 

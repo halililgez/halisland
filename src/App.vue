@@ -16,6 +16,9 @@ import SpeedPanel from "./components/SpeedPanel.vue";
 import AssistantPanel from "./components/AssistantPanel.vue";
 import { useSpeedTest } from "./composables/useSpeedTest";
 import { useAssistant } from "./composables/useAssistant";
+import { createClientTools } from "./composables/assistantTools";
+import { useReminders, countdown } from "./composables/useReminders";
+import { useTodos } from "./composables/useTodos";
 import { useClipboard } from "./composables/useClipboard";
 import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
@@ -71,10 +74,22 @@ const HAS_ASSISTANT = __ASSISTANT__ && navigator.userAgent.includes("Windows");
  */
 const assistantOn = computed(() => HAS_ASSISTANT && settings.value.assistant);
 const assistantProvider = computed(() => settings.value.assistantProvider);
-const TABS = computed<{ id: Tab; label: string }[]>(() => [
+/** Hatırlatıcılar ve yapılacaklar (asistan da kullanır; tek durum). */
+const reminders = useReminders();
+const { todos } = useTodos();
+const openTodos = computed(() => todos.value.filter((t) => !t.done).length);
+/** Kompakt adada geri sayım: en yakın hatırlatıcı bir saatten azsa. */
+const reminderLabel = computed(() => {
+  const r = reminders.next.value;
+  const left = r ? r.at - reminders.now.value : Infinity;
+  return left < 3600_000 ? countdown(left) : "";
+});
+const alarm = computed(() => reminders.fired.value[0] ?? null);
+
+const TABS = computed<{ id: Tab; label: string; badge?: number }[]>(() => [
   { id: "main", label: "Ana" },
   ...(assistantOn.value ? [{ id: "assistant" as const, label: "Asistan" }] : []),
-  { id: "today", label: "Bugün" },
+  { id: "today", label: "Bugün", badge: openTodos.value || undefined },
   { id: "controls", label: "Kontrol" },
   { id: "speed", label: "Hız" },
   { id: "clipboard", label: "Pano" },
@@ -114,7 +129,12 @@ const speedLabel = computed(() => {
 
 /** Asistan burada tutulur: ada kapanınca sohbet ve süren cevap kaybolmasın. */
 const assistantActive = computed(() => island.expanded.value && isActive("assistant"));
-const assistant = useAssistant(assistantActive, assistantOn, assistantProvider);
+const assistant = useAssistant(
+  assistantActive,
+  assistantOn,
+  assistantProvider,
+  createClientTools({ settings, focus, claude }),
+);
 // Asistan kapatılınca sekmesi kaybolur; üstündeysek ana sekmeye dön.
 watch(assistantOn, (on) => {
   if (!on && tab.value === "assistant") tab.value = "main";
@@ -187,11 +207,22 @@ const islandStyle = computed(() => {
         <span v-bind="drag">{{ time.split(":")[1] }}</span>
       </span>
       <span v-else class="compact-time mono" v-bind="drag">{{ time }}</span>
-      <span v-if="speed.running.value" class="compact-focus compact-speed mono">{{ speedLabel }}</span>
+      <button
+        v-if="alarm"
+        class="compact-focus compact-alarm"
+        :title="`${alarm.text} (kapatmak için tıkla)`"
+        @click.stop="reminders.dismiss(alarm.id)"
+      >
+        <span class="bell" aria-hidden="true">⏰</span>{{ alarm.text }}
+      </button>
+      <span v-else-if="speed.running.value" class="compact-focus compact-speed mono">{{ speedLabel }}</span>
       <span v-else-if="assistant.busy.value" class="compact-focus compact-assistant" title="Asistan yazıyor">
         <i /><i /><i />
       </span>
       <span v-else-if="focusActive" class="compact-focus mono">{{ focus.label.value }}</span>
+      <span v-else-if="reminderLabel" class="compact-focus compact-reminder mono" :title="reminders.next.value?.text">
+        <span class="bell-static" aria-hidden="true">⏰</span>{{ reminderLabel }}
+      </span>
       <span v-else-if="media.state.value.playing" class="eq" aria-hidden="true">
         <i /><i /><i /><i />
       </span>
@@ -200,6 +231,12 @@ const islandStyle = computed(() => {
 
     <!-- Genişletilmiş görünüm -->
     <div v-else class="expanded-view">
+      <div v-if="alarm" class="alarm-banner" role="alert">
+        <span class="bell" aria-hidden="true">⏰</span>
+        <b>{{ alarm.text }}</b>
+        <span v-if="reminders.fired.value.length > 1" class="dim">+{{ reminders.fired.value.length - 1 }}</span>
+        <button class="chip" @click="reminders.dismiss(alarm.id)">Tamam</button>
+      </div>
       <header class="header" v-bind="drag">
         <button v-if="settingsOpen" class="back" @click="settingsOpen = false">
           <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
@@ -231,7 +268,7 @@ const islandStyle = computed(() => {
             :class="{ active: tab === t.id }"
             @click="tab = t.id"
           >
-            {{ t.label }}
+            {{ t.label }}<sup v-if="t.badge" class="tab-badge">{{ t.badge }}</sup>
           </button>
         </nav>
         <span class="header-right" v-bind="drag">
@@ -546,6 +583,92 @@ const islandStyle = computed(() => {
 
 .compact-speed {
   color: var(--c-done);
+}
+
+.compact-reminder {
+  color: var(--c-waiting);
+}
+
+.bell-static {
+  margin-right: 2px;
+  font-size: 10px;
+}
+
+/* Süresi dolan hatırlatıcı: kompakt adada titreyen zil ve metin. */
+.compact-alarm {
+  max-width: 96px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-weight: 600;
+  animation: alarm-pulse 1s ease-in-out infinite;
+}
+
+.bell {
+  display: inline-block;
+  margin-right: 3px;
+  animation: ring 1s ease-in-out infinite;
+}
+
+@keyframes ring {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20% {
+    transform: rotate(-18deg);
+  }
+  40% {
+    transform: rotate(14deg);
+  }
+  60% {
+    transform: rotate(-8deg);
+  }
+}
+
+@keyframes alarm-pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.alarm-banner {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(30, 30, 34, 0.96);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 6px 24px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  animation: fade-in 0.2s ease both;
+}
+
+.alarm-banner b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.island.vertical .compact-alarm {
+  max-width: 100%;
+  font-size: 10px;
+}
+
+.tab-badge {
+  margin-left: 2px;
+  font-size: 8px;
+  color: var(--c-focus);
+  vertical-align: super;
+  line-height: 0;
 }
 
 /* Asistan cevap yazarken kompakt adada üç nokta. */

@@ -17,6 +17,7 @@ import {
   type WeatherCity,
 } from "../composables/useWeather";
 import { useTodos } from "../composables/useTodos";
+import { useReminders, clockTime, shortLeft } from "../composables/useReminders";
 import type { FocusState } from "../composables/useFocusTimer";
 
 const props = defineProps<{
@@ -135,6 +136,9 @@ function setMinutes(m: number) {
 
 /* ---------- Yapılacaklar ---------- */
 const { todos, add, toggle, remove, clearDone } = useTodos();
+
+/* Hatırlatıcılar: asistan kurar ("10 dakika sonra hatırlat"); burada görünür ve iptal edilir. */
+const reminders = useReminders();
 const draft = ref("");
 const doneCount = computed(() => todos.value.filter((t) => t.done).length);
 function submit() {
@@ -299,6 +303,18 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
         aria-label="Yapılacak ekle"
         @keydown.enter="submit"
       />
+      <div v-if="reminders.reminders.value.length" class="reminders">
+        <span
+          v-for="r in reminders.reminders.value"
+          :key="r.id"
+          class="reminder"
+          :title="`${r.text}: ${clockTime(r.at)}`"
+        >
+          <span class="mono">{{ shortLeft(r.at, reminders.now.value) }}</span>
+          <span class="r-text">{{ r.text }}</span>
+          <button class="del" aria-label="Hatırlatıcıyı iptal et" @click="reminders.cancel(r.id)">✕</button>
+        </span>
+      </div>
       <ul v-if="todos.length" class="todos">
         <li v-for="t in todos" :key="t.id" :class="{ done: t.done }">
           <button class="check" :aria-pressed="t.done" :aria-label="t.done ? 'Geri al' : 'Tamamlandı'" @click="toggle(t.id)">
@@ -657,6 +673,44 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
 .mini-chip.danger:hover {
   background: rgba(255, 90, 90, 0.2);
   color: #ff8a8a;
+}
+
+/* ---------- Hatırlatıcılar ---------- */
+.reminders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.reminder {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 18px;
+  padding: 0 4px 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 211, 77, 0.12);
+  color: var(--c-waiting);
+  font-size: 10.5px;
+}
+
+.reminder .r-text {
+  min-width: 0;
+  max-width: 90px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.reminder .del {
+  opacity: 0.6;
+  font-size: 9px;
+}
+
+.reminder .del:hover {
+  opacity: 1;
 }
 
 /* ---------- Yapılacaklar ---------- */
