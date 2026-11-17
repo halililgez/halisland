@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using Halisland.Assistant;
@@ -8,6 +7,7 @@ using Halisland.Assistant;
 //   HALISLAND_ASSISTANT_PORT   dinlenecek port (varsayılan 47822)
 //   HALISLAND_ASSISTANT_TOKEN  arayüzün her istekte göndereceği anahtar
 //   HALISLAND_PARENT_PID       Halisland kapanınca bu süreç de kapanır
+//   HALISLAND_DATA_DIR         veritabanı klasörü (varsayılan %APPDATA%\com.halil.halisland)
 // Elle `dotnet run` ile açılırsa anahtar istenmez (yalnızca geliştirme için).
 
 var port = int.TryParse(Environment.GetEnvironmentVariable("HALISLAND_ASSISTANT_PORT"), out var p) ? p : 47822;
@@ -19,6 +19,10 @@ builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, port));
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJson.Default));
 builder.Services.AddSingleton(options);
+builder.Services.AddSingleton(new Store(Store.DefaultDataDir()));
+builder.Services.AddSingleton<ToolRegistry>();
+// OllamaClient her istekte yeni (typed client); onu kullanan ChatService de.
+builder.Services.AddTransient<ChatService>();
 builder.Services.AddHttpClient<OllamaClient>(c =>
 {
     c.BaseAddress = new Uri(options.OllamaUrl);
@@ -30,7 +34,7 @@ builder.Services.AddHttpClient<OllamaClient>(c =>
 builder.Services.AddCors(o => o.AddDefaultPolicy(policy => policy
     .WithOrigins("http://tauri.localhost", "https://tauri.localhost", "tauri://localhost", "http://localhost:1420")
     .WithHeaders("content-type", "authorization")
-    .WithMethods("GET", "POST")));
+    .WithMethods("GET", "POST", "DELETE")));
 
 var app = builder.Build();
 app.UseCors();
@@ -78,45 +82,51 @@ app.MapPost("/warmup", async (OllamaClient ollama, CancellationToken ct) =>
     }
 });
 
-app.MapPost("/chat", async (ChatRequest req, OllamaClient ollama, HttpContext ctx) =>
+app.MapPost("/chat", async (ChatRequest req, ChatService chat, HttpContext ctx) =>
 {
+    if (string.IsNullOrWhiteSpace(req.Text))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+    }
     var ct = ctx.RequestAborted;
     ctx.Response.ContentType = "application/x-ndjson; charset=utf-8";
     ctx.Response.Headers.CacheControl = "no-cache";
-
-    var messages = Conversation.Build(req.Messages, options.NumCtx);
     try
     {
-        await foreach (var chunk in ollama.ChatAsync(messages, req.Think, ct))
-        {
-            if (chunk.Error is { } error)
-            {
-                await Write(ctx, new StreamEvent("error", Message: error), ct);
-                return;
-            }
-            if (chunk.Message?.Thinking is { Length: > 0 } thinking)
-                await Write(ctx, new StreamEvent("thinking", Text: thinking), ct);
-            if (chunk.Message?.Content is { Length: > 0 } content)
-                await Write(ctx, new StreamEvent("token", Text: content), ct);
-            if (chunk.Done)
-            {
-                double? speed = chunk is { EvalCount: > 0, EvalDuration: > 0 }
-                    ? Math.Round(chunk.EvalCount.Value / (chunk.EvalDuration.Value / 1e9), 1)
-                    : null;
-                await Write(ctx, new StreamEvent("done", Tokens: chunk.EvalCount, TokensPerSec: speed), ct);
-            }
-        }
+        await chat.RunAsync(req, e => Write(ctx, e, ct), ct);
     }
     catch (OperationCanceledException) when (ct.IsCancellationRequested)
     {
-        // Kullanıcı durdurdu; Ollama isteği de iptal edildi.
-    }
-    catch (Exception e) when (e is OllamaException or HttpRequestException or JsonException)
-    {
-        var message = e is HttpRequestException ? "Ollama'ya ulaşılamadı. Çalıştığından emin ol." : e.Message;
-        await Write(ctx, new StreamEvent("error", Message: message), ct);
+        // İstemci bağlantıyı kapattı.
     }
 });
+
+// ---------- Geçmiş ----------
+
+app.MapGet("/conversations", (Store store) => store.ListConversations());
+
+app.MapGet("/conversations/{id:long}/messages", (long id, Store store) =>
+    store.ConversationExists(id) ? Results.Ok(store.GetMessages(id)) : Results.NotFound());
+
+app.MapDelete("/conversations/{id:long}", (long id, Store store) =>
+{
+    store.DeleteConversation(id);
+    return Results.NoContent();
+});
+
+app.MapDelete("/conversations", (Store store) =>
+{
+    store.DeleteAllConversations();
+    return Results.NoContent();
+});
+
+// ---------- Hatırlananlar ----------
+
+app.MapGet("/memories", (Store store) => store.ListMemories());
+
+app.MapDelete("/memories/{id:long}", (long id, Store store) =>
+    store.DeleteMemory(id) ? Results.NoContent() : Results.NotFound());
 
 app.Run();
 return;
@@ -154,50 +164,4 @@ static void WatchParent(WebApplication app)
         await parent.WaitForExitAsync();
         await app.StopAsync();
     });
-}
-
-/// <summary>Modele gidecek mesaj listesi: sistem istemi + sığdığı kadar son mesaj.</summary>
-internal static class Conversation
-{
-    /// <summary>Kabaca token tahmini; Türkçe metinde ~3 karakter bir token.</summary>
-    private static int Estimate(string s) => s.Length / 3 + 4;
-
-    public static List<ChatMessage> Build(IEnumerable<ChatMessage> history, int numCtx)
-    {
-        var system = new ChatMessage("system", SystemPrompt());
-        // Cevaba yer kalsın: bağlamın dörtte biri cevap için ayrılır.
-        var budget = numCtx * 3 / 4 - Estimate(system.Content);
-
-        var kept = new List<ChatMessage>();
-        foreach (var m in history.Reverse())
-        {
-            if (m.Role is not ("user" or "assistant") || string.IsNullOrWhiteSpace(m.Content)) continue;
-            budget -= Estimate(m.Content);
-            if (budget < 0 && kept.Count > 0) break;
-            kept.Add(m);
-        }
-        kept.Reverse();
-        kept.Insert(0, system);
-        return kept;
-    }
-
-    private static string SystemPrompt()
-    {
-        var tr = CultureInfo.GetCultureInfo("tr-TR");
-        var now = DateTime.Now.ToString("d MMMM yyyy dddd, HH:mm", tr);
-        return $"""
-            Sen Halisland'in yerel asistanısın. Kullanıcının bilgisayarında, internete çıkmadan çalışıyorsun.
-            Türkçe, kısa ve net cevap ver; gerekmedikçe uzun liste ya da başlık kullanma.
-            Bilmediğin bir şeyi uydurma, emin değilsen söyle.
-
-            ÖNEMLİ: Şu an hiçbir aracın yok. Yalnızca yazıyla cevap verebilirsin.
-            Takvime etkinlik ekleyemez, hatırlatıcı ya da alarm kuramaz, not kaydedemez,
-            dosya arayamaz ya da açamaz, uygulama başlatamaz, mesaj gönderemez, internete bakamazsın.
-            Kullanıcı böyle bir iş isterse yapmış gibi davranma; "yaptım", "ekledim", "kaydettim" gibi
-            cümleler kurma. Bunu henüz yapamadığını kısaca söyle, istersen elle nasıl yapacağını anlat.
-            Bu konuşmayı da kalıcı olarak hatırlamazsın.
-
-            Şu an: {now}.
-            """;
-    }
 }

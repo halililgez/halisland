@@ -61,9 +61,29 @@ public sealed class OllamaClient(HttpClient http, AssistantOptions options)
             throw new OllamaException(await ReadErrorAsync(res, ct));
     }
 
+    /// <summary>
+    /// Akışsız, düşünmesiz kısa iş (başlık, özet). Cevabın metnini döndürür.
+    /// </summary>
+    public async Task<string> CompleteAsync(IReadOnlyList<OllamaMessage> messages, CancellationToken ct)
+    {
+        var body = new OllamaChatRequest(
+            options.Model,
+            messages,
+            Stream: false,
+            Think: false,
+            KeepAlive: options.KeepAlive,
+            Options: new OllamaOptions(options.NumCtx));
+        using var res = await http.PostAsJsonAsync("/api/chat", body, AppJson.Default.OllamaChatRequest, ct);
+        if (!res.IsSuccessStatusCode)
+            throw new OllamaException(await ReadErrorAsync(res, ct));
+        var chunk = await res.Content.ReadFromJsonAsync(AppJson.Default.OllamaChatChunk, ct);
+        return chunk?.Message?.Content?.Trim() ?? "";
+    }
+
     public async IAsyncEnumerable<OllamaChatChunk> ChatAsync(
-        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<OllamaMessage> messages,
         bool think,
+        OllamaTool[]? tools,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var body = new OllamaChatRequest(
@@ -72,7 +92,8 @@ public sealed class OllamaClient(HttpClient http, AssistantOptions options)
             Stream: true,
             Think: think,
             KeepAlive: options.KeepAlive,
-            Options: new OllamaOptions(options.NumCtx));
+            Options: new OllamaOptions(options.NumCtx),
+            Tools: tools);
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
         {

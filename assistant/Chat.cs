@@ -1,0 +1,344 @@
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+
+namespace Halisland.Assistant;
+
+/// <summary>
+/// Bir kullanıcı mesajını işler: veritabanına yazar, modele gidecek bağlamı
+/// kurar (sistem istemi + hatırlananlar + özet + son mesajlar), cevabı akıtır,
+/// araç çağrılarını çalıştırır; sonra başlık ve gerekirse özet üretir.
+/// </summary>
+public sealed class ChatService(
+    Store store,
+    OllamaClient ollama,
+    ToolRegistry tools,
+    AssistantOptions options,
+    ILogger<ChatService> log)
+{
+    /// <summary>Bir cevapta en fazla bu kadar araç turu (sonsuz döngüye karşı).</summary>
+    private const int MaxToolRounds = 4;
+
+    /// <summary>Özetlenmemiş mesajlar bağlamın yarısını geçince eski kısım özetlenir.</summary>
+    private int SummarizeAbove => options.NumCtx / 2;
+
+    /// <summary>Özetlerken son bu kadar mesaj olduğu gibi kalır.</summary>
+    private const int KeepRecent = 6;
+
+    /// <summary>Aynı anda yalnızca bir özet işi (GPU tek).</summary>
+    private static readonly SemaphoreSlim SummaryLock = new(1, 1);
+
+    /// <summary>Kabaca token tahmini; Türkçe metinde ~3 karakter bir token.</summary>
+    public static int Estimate(string s) => s.Length / 3 + 4;
+
+    public async Task RunAsync(ChatRequest req, Func<StreamEvent, Task> write, CancellationToken ct)
+    {
+        var text = req.Text.Trim();
+        var convId = req.ConversationId is { } id && store.ConversationExists(id) ? id : store.CreateConversation();
+        await write(new StreamEvent("conversation", ConversationId: convId));
+
+        store.AddMessage(convId, "user", text);
+
+        // "Şunu unut": silme aracı yok (bkz. ToolRegistry). Model bu istekte
+        // yönlendirmeye rağmen "unuttum" diye yalan söyleyebiliyor; o yüzden
+        // modele sorulmadan sabit ve doğru bir cevap verilir.
+        if (ForgetIntent.IsMatch(text) && !MemoryIntent.IsMatch(text))
+        {
+            const string reply =
+                "Hatırladıklarımı kendim silemiyorum. Başlıktaki Hafıza düğmesine basıp " +
+                "o bilginin yanındaki × ile silebilirsin; sonraki sohbetlerde artık kullanmam.";
+            store.AddMessage(convId, "assistant", reply);
+            if (!store.HasTitle(convId)) store.SetTitle(convId, "Hafızadan silme");
+            await write(new StreamEvent("token", Text: reply));
+            await write(new StreamEvent("done"));
+            return;
+        }
+
+        var history = BuildContext(convId);
+        var replyId = store.AddMessage(convId, "assistant", "");
+
+        var content = new StringBuilder();
+        var thinking = new StringBuilder();
+        string? error = null;
+        double? speed = null;
+        var finished = false;
+        var remembered = false;
+        try
+        {
+            for (var round = 0; round < MaxToolRounds; round++)
+            {
+                var calls = new List<OllamaToolCall>();
+                var roundContent = new StringBuilder();
+                await foreach (var chunk in ollama.ChatAsync(history, req.Think, ToolRegistry.Definitions, ct))
+                {
+                    if (chunk.Error is { } e)
+                    {
+                        error = e;
+                        await write(new StreamEvent("error", Message: e));
+                        return;
+                    }
+                    if (chunk.Message?.Thinking is { Length: > 0 } th)
+                    {
+                        thinking.Append(th);
+                        await write(new StreamEvent("thinking", Text: th));
+                    }
+                    if (chunk.Message?.Content is { Length: > 0 } c)
+                    {
+                        content.Append(c);
+                        roundContent.Append(c);
+                        await write(new StreamEvent("token", Text: c));
+                    }
+                    if (chunk.Message?.ToolCalls is { Length: > 0 } tc) calls.AddRange(tc);
+                    if (chunk.Done && chunk is { EvalCount: > 0, EvalDuration: > 0 })
+                        speed = Math.Round(chunk.EvalCount.Value / (chunk.EvalDuration.Value / 1e9), 1);
+                }
+
+                if (calls.Count == 0) break;
+                if (calls.Any(c => c.Function.Name == "hatirla")) remembered = true;
+
+                // Araçları çalıştır, sonuçları modele geri ver ve cevabın devamını iste.
+                history.Add(new OllamaMessage("assistant", roundContent.ToString(), ToolCalls: [.. calls]));
+                foreach (var call in calls)
+                {
+                    var result = tools.Execute(call.Function);
+                    log.LogInformation("Araç {Name}: {Result}", call.Function.Name, result.ForModel);
+                    await write(new StreamEvent("tool", Text: result.ForUser));
+                    history.Add(new OllamaMessage("tool", result.ForModel, ToolName: call.Function.Name));
+                }
+                // Turlar arasında ayraç: araçtan önce yazılanla sonrası yapışmasın.
+                if (content.Length > 0 && !char.IsWhiteSpace(content[^1])) content.Append('\n');
+            }
+            // Güvenlik ağı: kullanıcı açıkça hatırlamayı istediği hâlde model aracı
+            // çağırmadıysa (denemede 24'te 3 kez, üstelik "kaydettim" diyerek) bilgi
+            // ayrı bir kısa çağrıyla çıkarılıp kaydedilir.
+            if (!remembered && MemoryIntent.IsMatch(text))
+            {
+                var fact = await ExtractFactAsync(text, ct);
+                if (fact is not null)
+                {
+                    var result = tools.Remember(fact);
+                    log.LogInformation("Hatırlama güvenlik ağı: {Result}", result.ForModel);
+                    await write(new StreamEvent("tool", Text: result.ForUser));
+                }
+            }
+            finished = true;
+            await write(new StreamEvent("done", TokensPerSec: speed));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Kullanıcı durdurdu: yazılan kısım kaydedilir.
+        }
+        catch (Exception e) when (e is OllamaException or HttpRequestException or JsonException)
+        {
+            error = e is HttpRequestException ? "Ollama'ya ulaşılamadı. Çalıştığından emin ol." : e.Message;
+            await write(new StreamEvent("error", Message: error));
+        }
+        finally
+        {
+            store.FinishMessage(
+                replyId,
+                content.ToString().Trim(),
+                thinking.Length > 0 ? thinking.ToString() : null,
+                error,
+                speed);
+        }
+
+        if (!finished) return;
+
+        // Başlık (ilk cevaptan sonra bir kez). Akış açıkken üretilir ki arayüz hemen alsın.
+        if (!store.HasTitle(convId))
+        {
+            var title = await MakeTitleAsync(convId, ct);
+            if (title is not null) await write(new StreamEvent("title", Text: title, ConversationId: convId));
+        }
+
+        // Özet arka planda; istek bitse de sürer.
+        _ = Task.Run(() => SummarizeIfNeededAsync(convId));
+    }
+
+    /// <summary>
+    /// Açık hatırlama isteği. "hatırlıyor musun", "hatırlatır mısın" gibi sorular eşleşmez.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex MemoryIntent = new(
+        @"\bhatırla\b|\bhatırlar\s*mısın|\bhatırlasana|\bunutma\b|\bunutmayın\b|aklında\s+(tut|olsun|kalsın)|\bnot\s+al|\bkaydet\b|\bkaydeder\s*misin",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Açık unutma/silme isteği ("unut", "unutur musun", "hafızandan sil").</summary>
+    private static readonly System.Text.RegularExpressions.Regex ForgetIntent = new(
+        @"\bunut\b|\bunutur\s*musun|\bunutsana|hafızandan\s+(sil|çıkar)|\bbunu\s+sil\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Kullanıcının saklanmasını istediği bilgi; yoksa null.</summary>
+    private async Task<string?> ExtractFactAsync(string userText, CancellationToken ct)
+    {
+        try
+        {
+            var raw = await ollama.CompleteAsync(
+            [
+                new OllamaMessage("system",
+                    "Kullanıcının mesajında saklanmasını istediği bilgiyi kısa, tek cümle ve üçüncü tekil kişiyle yaz " +
+                    "(ör. 'Kullanıcının adı Halil.'). Saklanacak somut bir bilgi yoksa yalnızca YOK yaz. Başka bir şey yazma."),
+                new OllamaMessage("user", Clip(userText, 1000)),
+            ], ct);
+            var line = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            if (line is null || line.StartsWith("YOK", StringComparison.OrdinalIgnoreCase)) return null;
+            return line.Trim('"', '\'', '“', '”');
+        }
+        catch (Exception e) when (e is OllamaException or HttpRequestException or JsonException)
+        {
+            log.LogWarning("Hatırlanacak bilgi çıkarılamadı: {Message}", e.Message);
+            return null;
+        }
+    }
+
+    /// <summary>Modele gidecek mesajlar. Son eleman yeni kullanıcı mesajıdır.</summary>
+    private List<OllamaMessage> BuildContext(long convId)
+    {
+        var memories = store.ListMemories();
+        var (summary, upto) = store.GetSummary(convId);
+        var system = SystemPrompt(memories, summary);
+
+        // Cevaba yer kalsın: bağlamın dörtte biri cevap için ayrılır.
+        var budget = options.NumCtx * 3 / 4 - Estimate(system) - 600; // ~600: araç tanımları
+        var kept = new List<OllamaMessage>();
+        foreach (var m in store.GetMessages(convId).Where(m => m.Id > upto).Reverse())
+        {
+            if (m.Role is not ("user" or "assistant") || string.IsNullOrWhiteSpace(m.Content)) continue;
+            budget -= Estimate(m.Content);
+            if (budget < 0 && kept.Count > 0) break;
+            kept.Add(new OllamaMessage(m.Role, m.Content));
+        }
+        kept.Reverse();
+        kept.Insert(0, new OllamaMessage("system", system));
+        return kept;
+    }
+
+    private async Task<string?> MakeTitleAsync(long convId, CancellationToken ct)
+    {
+        var msgs = store.GetMessages(convId);
+        var question = msgs.FirstOrDefault(m => m.Role == "user")?.Content;
+        var answer = msgs.FirstOrDefault(m => m.Role == "assistant" && m.Content.Length > 0)?.Content;
+        if (question is null) return null;
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        try
+        {
+            var raw = await ollama.CompleteAsync(
+            [
+                new OllamaMessage("system",
+                    "Verilen sohbete 2-5 kelimelik Türkçe bir başlık yaz. Yalnızca başlığı yaz; " +
+                    "tırnak, nokta, emoji ya da 'Başlık:' gibi bir ön ek koyma."),
+                new OllamaMessage("user",
+                    $"Kullanıcı: {Clip(question, 600)}\nAsistan: {Clip(answer ?? "", 600)}"),
+            ], timeout.Token);
+            var title = CleanTitle(raw);
+            if (title.Length == 0) return null;
+            store.SetTitle(convId, title);
+            return title;
+        }
+        catch (Exception e) when (e is OllamaException or HttpRequestException or OperationCanceledException or JsonException)
+        {
+            log.LogWarning("Başlık üretilemedi: {Message}", e.Message);
+            return null;
+        }
+    }
+
+    internal static string CleanTitle(string raw)
+    {
+        var line = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault() ?? "";
+        if (line.StartsWith("Başlık:", StringComparison.OrdinalIgnoreCase)) line = line[7..];
+        // Nokta yalnızca sondan kırpılır (".NET" gibi başlıklar bozulmasın).
+        line = line.Trim().Trim('"', '\'', '“', '”', '*', '#', ' ').TrimEnd('.', ' ');
+        return line.Length > 60 ? line[..60].TrimEnd() : line;
+    }
+
+    /// <summary>
+    /// Özetlenmemiş mesajlar çok uzadıysa son <see cref="KeepRecent"/> mesaj
+    /// dışındakileri (önceki özetle birlikte) yeni bir özete katlar.
+    /// </summary>
+    private async Task SummarizeIfNeededAsync(long convId)
+    {
+        await SummaryLock.WaitAsync();
+        try
+        {
+            var (summary, upto) = store.GetSummary(convId);
+            var pending = store.GetMessages(convId)
+                .Where(m => m.Id > upto && m.Content.Length > 0 && m.Role is "user" or "assistant")
+                .ToList();
+            if (pending.Sum(m => Estimate(m.Content)) <= SummarizeAbove || pending.Count <= KeepRecent) return;
+
+            var fold = pending.Take(pending.Count - KeepRecent).ToList();
+            var transcript = new StringBuilder();
+            if (summary is not null) transcript.Append("Önceki özet: ").AppendLine(summary).AppendLine();
+            foreach (var m in fold)
+                transcript.Append(m.Role == "user" ? "Kullanıcı: " : "Asistan: ").AppendLine(Clip(m.Content, 1500));
+
+            var next = await ollama.CompleteAsync(
+            [
+                // Anlatı biçimindeki özeti model kullanmıyor (denemede 0/4); madde
+                // madde somut bilgi listesini kullanıyor (4/4).
+                new OllamaMessage("system", """
+                    Aşağıdaki sohbetten, devamında gerekebilecek bilgileri Türkçe madde listesi olarak çıkar.
+                    Biçim (boş kalan başlığı yazma):
+                    Kullanıcının verdiği bilgiler:
+                    - (ad, sayı, tarih, tercih gibi somut bilgiler; ör. "Kullanıcının kedisinin adı Pamuk, 3 yaşında.")
+                    Konuşulan konular:
+                    - (kısaca)
+                    Yarım kalan işler ve kararlar:
+                    - (varsa)
+                    Önceki özetteki bilgileri de koru. En fazla 15 madde. Yalnızca listeyi yaz.
+                    """),
+                new OllamaMessage("user", transcript.ToString()),
+            ], CancellationToken.None);
+            if (next.Length > 0) store.SetSummary(convId, next, fold[^1].Id);
+        }
+        catch (Exception e) when (e is OllamaException or HttpRequestException or JsonException)
+        {
+            log.LogWarning("Özet üretilemedi: {Message}", e.Message);
+        }
+        finally
+        {
+            SummaryLock.Release();
+        }
+    }
+
+    private static string Clip(string s, int max) => s.Length <= max ? s : s[..max] + "…";
+
+    private static string SystemPrompt(Memory[] memories, string? summary)
+    {
+        var tr = CultureInfo.GetCultureInfo("tr-TR");
+        var now = DateTime.Now.ToString("d MMMM yyyy dddd, HH:mm", tr);
+        var sb = new StringBuilder($"""
+            Sen Halisland'in yerel asistanısın. Kullanıcının bilgisayarında, internete çıkmadan çalışıyorsun.
+            Türkçe, kısa ve net cevap ver; gerekmedikçe uzun liste ya da başlık kullanma.
+            Bilmediğin bir şeyi uydurma, emin değilsen söyle.
+
+            ARAÇLAR: Tek aracın "hatirla": kullanıcı hakkında bir bilgiyi sohbetler arası kaydeder. Kullanıcı
+            "hatırla", "unutma" (= hatırla), "aklında tut", "aklında olsun", "not al" gibi bir istekte bulunursa çağır.
+            Kullanıcı istemeden kendiliğinden bilgi kaydetme. Bir bilgiyi kaydetmenin TEK yolu bu aracı çağırmaktır;
+            aracı çağırmadan "aklımda", "kaydettim", "hatırlayacağım" deme.
+            Kayıtlı bir bilgiyi silemezsin; kullanıcı unutmanı isterse Asistan sekmesindeki Hafıza listesinden
+            silebileceğini söyle.
+            Bunların dışında hiçbir şey yapamazsın: takvime etkinlik ekleyemez, hatırlatıcı ya da alarm kuramaz,
+            not dosyası yazamaz, dosya arayamaz ya da açamaz, uygulama başlatamaz, mesaj gönderemez, internete bakamazsın.
+            Böyle bir iş istenirse yapmış gibi davranma; "yaptım", "ekledim", "kaydettim" deme. Yapamadığını kısaca söyle,
+            istersen elle nasıl yapılacağını anlat. Bir aracı gerçekten çağırmadıysan çağırmış gibi konuşma.
+            Bu kısıt yalnızca eylemler için: bildiğin genel bilgiyle (tarih, coğrafya, matematik, kod, dil) normal
+            şekilde cevap ver. İnternet yalnızca güncel bilgi (hava durumu, haberler, kurlar) için gerekir.
+
+            Şu an: {now}.
+            """);
+        if (memories.Length > 0)
+        {
+            sb.AppendLine().AppendLine()
+                .AppendLine("Kullanıcı hakkında hatırladıkların (numarası köşeli parantezde). Bunları gerektiğinde kullan;")
+                .AppendLine("kullanıcıyla konuşurken ikinci tekil kişiye çevir (\"Kullanıcının adı Halil.\" → \"Adın Halil.\"):");
+            foreach (var m in memories) sb.Append("- [").Append(m.Id).Append("] ").AppendLine(m.Text);
+        }
+        if (summary is not null)
+            sb.AppendLine().AppendLine("Bu sohbetin daha önceki kısmından bilinenler:").AppendLine(summary);
+        return sb.ToString();
+    }
+}
