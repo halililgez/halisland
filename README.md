@@ -2,7 +2,7 @@
 
 Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında duran, üzerine gelince açılan cam görünümlü bir ada: saat, odak sayacı, Claude Code durumu ve çalan müzik.
 
-> Durum: ilk sürüm (v0.1.0), Windows. macOS desteği sürüyor. Fazlar için `docs/ILERLEME.md`.
+> Durum: v0.2.0, Windows. macOS desteği sürüyor. Fazlar için `docs/ILERLEME.md`.
 
 ## Özellikler
 
