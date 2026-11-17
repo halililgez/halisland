@@ -32,7 +32,15 @@ public sealed record StoredMessage(
     string Content,
     string? Thinking,
     string? Error,
-    double? Speed);
+    double? Speed,
+    StoredTool[]? Tools = null);
+
+/// <summary>
+/// Bir cevapta çalışan araç: adı, argümanları (JSON), modele dönen sonuç,
+/// arayüzdeki not. Sonraki turlarda bağlama gerçek araç çağrısı olarak geri
+/// konur; yoksa model eski "açıldı" cevaplarını araçsız sanıp taklit ediyor.
+/// </summary>
+public sealed record StoredTool(string Name, string Arguments, string Result, string Note, bool Ok);
 
 /// <summary>Sohbetler arası hatırlanan bilgi.</summary>
 public sealed record Memory(long Id, string Text, long Created);
@@ -40,7 +48,10 @@ public sealed record Memory(long Id, string Text, long Created);
 /// <summary>
 /// /chat akışındaki tek satır (NDJSON). Tür:
 /// "conversation" (sohbet kimliği; ilk satır), "thinking" (düşünce parçası),
-/// "token" (cevap parçası), "tool" (araç çalıştı; Text kullanıcıya gösterilecek özet),
+/// "token" (cevap parçası), "tool" (araç çalıştı; Text kullanıcıya gösterilecek özet; Approved false ise iş yapılmadı),
+/// "confirm" (araç kullanıcı onayı bekliyor: Id, Message soru, Text ayrıntı),
+/// "confirm-end" (onay cevaplandı ya da süresi doldu: Id, Approved),
+/// "retry" (model araç çağırmadan bir iş yaptığını söyledi; yazılan cevap silinir, yenisi gelir),
 /// "done" (cevap bitti, istatistikler), "title" (sohbetin yeni başlığı) ya da "error".
 /// </summary>
 public sealed record StreamEvent(
@@ -49,7 +60,12 @@ public sealed record StreamEvent(
     long? ConversationId = null,
     int? Tokens = null,
     double? TokensPerSec = null,
-    string? Message = null);
+    string? Message = null,
+    string? Id = null,
+    bool? Approved = null);
+
+/// <summary>Onay bekleyen araca kullanıcının cevabı (POST /confirm/{id}).</summary>
+public sealed record ConfirmRequest(bool Approved);
 
 // ---------- Ollama API türleri (snake_case) ----------
 
@@ -112,10 +128,12 @@ public sealed record OllamaError([property: JsonPropertyName("error")] string? E
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ChatRequest))]
+[JsonSerializable(typeof(ConfirmRequest))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(StreamEvent))]
 [JsonSerializable(typeof(ConversationInfo[]))]
 [JsonSerializable(typeof(StoredMessage[]))]
+[JsonSerializable(typeof(StoredTool[]))]
 [JsonSerializable(typeof(Memory[]))]
 [JsonSerializable(typeof(OllamaChatRequest))]
 [JsonSerializable(typeof(OllamaLoadRequest))]

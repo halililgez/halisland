@@ -202,6 +202,19 @@ public sealed class AnthropicProvider : CloudProvider
             }
             if (m.Role == "assistant" && m.Raw is JsonArray raw)
                 list.Add((JsonNode)new JsonObject { ["role"] = "assistant", ["content"] = raw.DeepClone() });
+            else if (m.Role == "assistant" && m.ToolCalls is { Length: > 0 } past)
+            {
+                // Önceki turlardan (veritabanından) gelen araç çağrısı: düşünce bloğu yok.
+                var content = new JsonArray();
+                if (m.Content.Length > 0) content.Add((JsonNode)new JsonObject { ["type"] = "text", ["text"] = m.Content });
+                foreach (var call in past)
+                    content.Add((JsonNode)new JsonObject
+                    {
+                        ["type"] = "tool_use", ["id"] = call.Id, ["name"] = call.Name,
+                        ["input"] = JsonNode.Parse(call.Arguments.GetRawText()),
+                    });
+                list.Add((JsonNode)new JsonObject { ["role"] = "assistant", ["content"] = content });
+            }
             else if (m.Content.Length > 0)
                 list.Add((JsonNode)new JsonObject { ["role"] = m.Role, ["content"] = m.Content });
         }

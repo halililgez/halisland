@@ -110,6 +110,26 @@ public sealed class GeminiProvider : CloudProvider
             Raw: calls.Count > 0 ? raw : null);
     }
 
+    /// <summary>
+    /// Önceki turlardan (veritabanından) gelen araç çağrıları. Gerçek imza yok;
+    /// Google'ın bu durum için belgelediği atlama değeri konur.
+    /// </summary>
+    private static JsonArray PastCalls(string text, ToolCall[] calls)
+    {
+        var parts = new JsonArray();
+        if (text.Length > 0) parts.Add((JsonNode)new JsonObject { ["text"] = text });
+        foreach (var call in calls)
+            parts.Add((JsonNode)new JsonObject
+            {
+                ["functionCall"] = new JsonObject
+                {
+                    ["name"] = call.Name, ["args"] = JsonNode.Parse(call.Arguments.GetRawText()),
+                },
+                ["thoughtSignature"] = "skip_thought_signature_validator",
+            });
+        return parts;
+    }
+
     private static JsonObject Request(IReadOnlyList<ChatMessage> messages, bool think, IReadOnlyList<ToolDef> tools)
     {
         var contents = new JsonArray();
@@ -137,8 +157,10 @@ public sealed class GeminiProvider : CloudProvider
             }
             JsonArray parts = m.Raw is JsonArray raw
                 ? (JsonArray)raw.DeepClone()
-                : new JsonArray(new JsonObject { ["text"] = m.Content });
-            if (m.Content.Length == 0 && m.Raw is null) continue;
+                : m.ToolCalls is { Length: > 0 } past
+                    ? PastCalls(m.Content, past)
+                    : new JsonArray(new JsonObject { ["text"] = m.Content });
+            if (m.Content.Length == 0 && m.Raw is null && m.ToolCalls is not { Length: > 0 }) continue;
             contents.Add((JsonNode)new JsonObject { ["role"] = m.Role == "assistant" ? "model" : "user", ["parts"] = parts });
         }
         if (results is not null) contents.Add((JsonNode)new JsonObject { ["role"] = "user", ["parts"] = results });

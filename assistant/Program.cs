@@ -23,6 +23,8 @@ builder.Logging.SetMinimumLevel(LogLevel.Warning);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJson.Default));
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(new Store(Store.DefaultDataDir()));
+builder.Services.AddSingleton<Confirmations>();
+builder.Services.AddSingleton<DesktopTools>();
 builder.Services.AddSingleton<ToolRegistry>();
 // Sağlayıcı açılışta seçilir; değişince Halisland backend'i yeniden başlatır.
 builder.Services.AddSingleton<IChatProvider>(options.Provider switch
@@ -116,6 +118,10 @@ app.MapPost("/chat", async (ChatRequest req, ChatService chat, HttpContext ctx) 
         // İstemci bağlantıyı kapattı.
     }
 });
+
+// Araç onayı (ör. dosya açma): akıştaki "confirm" olayına kullanıcının cevabı.
+app.MapPost("/confirm/{id}", (string id, ConfirmRequest req, Confirmations confirmations) =>
+    confirmations.Resolve(id, req.Approved) ? Results.NoContent() : Results.NotFound());
 
 // ---------- Geçmiş ----------
 

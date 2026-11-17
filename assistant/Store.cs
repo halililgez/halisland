@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace Halisland.Assistant;
@@ -66,7 +67,9 @@ public sealed class Store
                 thinking    TEXT,
                 error       TEXT,
                 speed       REAL,
-                created     INTEGER NOT NULL
+                created     INTEGER NOT NULL,
+                -- Cevapta çalışan araçlar (StoredTool[] JSON).
+                tools       TEXT
             );
             CREATE INDEX IF NOT EXISTS messages_conversation ON messages(conversation_id, id);
             CREATE TABLE IF NOT EXISTS memories (
@@ -76,6 +79,16 @@ public sealed class Store
             );
             """;
         cmd.ExecuteNonQuery();
+
+        // Faz 25 öncesi veritabanlarında tools sütunu yok.
+        using var info = c.CreateCommand();
+        info.CommandText = "SELECT 1 FROM pragma_table_info('messages') WHERE name = 'tools'";
+        if (info.ExecuteScalar() is null)
+        {
+            using var alter = c.CreateCommand();
+            alter.CommandText = "ALTER TABLE messages ADD COLUMN tools TEXT";
+            alter.ExecuteNonQuery();
+        }
     }
 
     private static long Now() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -207,13 +220,17 @@ public sealed class Store
     }
 
     /// <summary>Akış biterken (ya da durdurulunca) asistan mesajının son hâli.</summary>
-    public void FinishMessage(long id, string content, string? thinking, string? error, double? speed)
+    public void FinishMessage(long id, string content, string? thinking, string? error, double? speed,
+        StoredTool[]? tools = null)
     {
         using var c = Open();
         using var cmd = c.CreateCommand();
         cmd.CommandText = """
-            UPDATE messages SET content = $t, thinking = $th, error = $e, speed = $s WHERE id = $id
+            UPDATE messages SET content = $t, thinking = $th, error = $e, speed = $s, tools = $tools WHERE id = $id
             """;
+        cmd.Parameters.AddWithValue("$tools", tools is { Length: > 0 }
+            ? JsonSerializer.Serialize(tools, AppJson.Default.StoredToolArray)
+            : DBNull.Value);
         cmd.Parameters.AddWithValue("$t", content);
         cmd.Parameters.AddWithValue("$th", (object?)thinking ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$e", (object?)error ?? DBNull.Value);
@@ -227,7 +244,7 @@ public sealed class Store
         using var c = Open();
         using var cmd = c.CreateCommand();
         cmd.CommandText = """
-            SELECT id, role, content, thinking, error, speed FROM messages
+            SELECT id, role, content, thinking, error, speed, tools FROM messages
             WHERE conversation_id = $c ORDER BY id
             """;
         cmd.Parameters.AddWithValue("$c", conversationId);
@@ -241,9 +258,22 @@ public sealed class Store
                 r.GetString(2),
                 r.IsDBNull(3) ? null : r.GetString(3),
                 r.IsDBNull(4) ? null : r.GetString(4),
-                r.IsDBNull(5) ? null : r.GetDouble(5)));
+                r.IsDBNull(5) ? null : r.GetDouble(5),
+                r.IsDBNull(6) ? null : ReadTools(r.GetString(6))));
         }
         return [.. list];
+    }
+
+    private static StoredTool[]? ReadTools(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(json, AppJson.Default.StoredToolArray);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     // ---------- Hatırlananlar ----------
