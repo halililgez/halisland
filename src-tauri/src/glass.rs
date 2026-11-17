@@ -15,7 +15,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::{Manager, WebviewWindow};
+use std::thread;
+use std::time::Duration;
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -82,6 +84,28 @@ pub fn apply_shape(window: &WebviewWindow) {
     let r = (shape.radius * scale).round() as i32;
     let x = (size.width as i32 - w) / 2;
     platform::set_region(window, x, 0, w, h, r);
+}
+
+/// Pencere kütüphanesi (tao) bazı sistem olaylarında (kilit ekranından dönüş,
+/// ekran/DPI değişikliği) pencere stillerini yeniden uygular. O zaman
+/// kaldırdığımız başlık çubuğu geri gelir ve adanın üstünde gri bir şerit
+/// görünür. Şekil değişmediği sürece bölge yeniden kurulmadığı için bu,
+/// bir sonraki aç-kapaya kadar kalıyordu. Saniyede bir stile bakıp gerekirse
+/// çerçeveyi yeniden temizliyoruz (yalnızca bir `GetWindowLongPtr` çağrısı).
+pub fn start_frame_guard(app: AppHandle) {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            let Some(window) = app.get_webview_window("main") else {
+                continue;
+            };
+            let active = *app.state::<GlassState>().active.lock().unwrap();
+            if active && platform::has_frame(&window) {
+                let w = window.clone();
+                let _ = app.run_on_main_thread(move || apply_shape(&w));
+            }
+        }
+    });
 }
 
 #[cfg(windows)]
@@ -170,14 +194,27 @@ mod platform {
     /// çerçeveyi yalnızca çizimde gizler. Pencereye bölge verilince Windows o
     /// çerçeveyi eski tip başlık çubuğu olarak çizmeye başlıyor; bu yüzden
     /// çerçeve stillerini tamamen kaldırıp pencereyi düz bir popup yapıyoruz.
+    const FRAME: WINDOW_STYLE =
+        WINDOW_STYLE(WS_CAPTION.0 | WS_SYSMENU.0 | WS_THICKFRAME.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0);
+
+    fn style(hwnd: HWND) -> WINDOW_STYLE {
+        WINDOW_STYLE(unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32)
+    }
+
+    /// Çerçeve stilleri geri gelmiş mi?
+    pub fn has_frame(window: &WebviewWindow) -> bool {
+        window
+            .hwnd()
+            .is_ok_and(|hwnd| style(hwnd) & FRAME != WINDOW_STYLE(0))
+    }
+
     fn strip_frame(hwnd: HWND) {
-        let frame = WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+        let style = style(hwnd);
+        if style & FRAME == WINDOW_STYLE(0) {
+            return;
+        }
         unsafe {
-            let style = WINDOW_STYLE(GetWindowLongPtrW(hwnd, GWL_STYLE) as u32);
-            if style & frame == WINDOW_STYLE(0) {
-                return;
-            }
-            let next = (style & !frame) | WS_POPUP;
+            let next = (style & !FRAME) | WS_POPUP;
             SetWindowLongPtrW(hwnd, GWL_STYLE, next.0 as isize);
             let _ = SetWindowPos(
                 hwnd,
@@ -216,6 +253,10 @@ mod platform {
     use tauri::WebviewWindow;
 
     pub fn apply(_window: &WebviewWindow, _mode: GlassMode) -> bool {
+        false
+    }
+
+    pub fn has_frame(_window: &WebviewWindow) -> bool {
         false
     }
 

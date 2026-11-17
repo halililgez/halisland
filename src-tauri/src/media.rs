@@ -9,6 +9,16 @@
 //! - `media-artwork` : yalnızca şarkı değişince, kapak (data URL)
 
 use serde::Serialize;
+use std::sync::Mutex;
+
+/// Son gönderilen kapak. Olay, frontend dinlemeye başlamadan önce
+/// gönderilmiş olabilir (açılışta); frontend şarkı değişince bunu ister.
+static LAST_ARTWORK: Mutex<Option<MediaArtwork>> = Mutex::new(None);
+
+#[tauri::command]
+pub fn media_artwork() -> Option<MediaArtwork> {
+    LAST_ARTWORK.lock().unwrap().clone()
+}
 
 #[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Clone, Serialize, PartialEq, Default, Debug)]
@@ -170,10 +180,9 @@ mod platform {
                         artwork_key = state.track_key.clone();
                         artwork_tries = 0;
                     }
-                    let _ = app.emit(
-                        "media-artwork",
-                        MediaArtwork { track_key: state.track_key.clone(), data_url },
-                    );
+                    let artwork = MediaArtwork { track_key: state.track_key.clone(), data_url };
+                    *super::LAST_ARTWORK.lock().unwrap() = Some(artwork.clone());
+                    let _ = app.emit("media-artwork", artwork);
                 }
 
                 last = state;

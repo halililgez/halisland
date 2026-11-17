@@ -1,11 +1,15 @@
 //! Tepsi (tray) simgesi ve menüsü: ayarlar, adayı gizle/göster, çıkış.
+//!
+//! Aynı menü adaya sağ tıklayınca ya da açık adadaki dişli düğmesiyle de
+//! açılır (`open_menu`). Windows 11 tepsi simgesini çoğunlukla `^` taşma
+//! alanına sakladığı için ayarlara yalnızca tepsiden ulaşmak zor.
 
 use crate::glass::GlassMode;
 use crate::settings::{self, FOCUS_CHOICES, Settings};
 use std::sync::Mutex;
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, Wry};
+use tauri::{AppHandle, Manager, WebviewWindow, Wry};
 
 const GLASS_CHOICES: [(GlassMode, &str, &str); 3] = [
     (GlassMode::Acrylic, "glass-acrylic", "Buzlu cam"),
@@ -19,7 +23,9 @@ pub struct TrayItems {
     glass: Vec<(GlassMode, CheckMenuItem<Wry>)>,
     tint: CheckMenuItem<Wry>,
     autostart: CheckMenuItem<Wry>,
+    claude: CheckMenuItem<Wry>,
     toggle: MenuItem<Wry>,
+    menu: Menu<Wry>,
 }
 
 pub struct TrayState(Mutex<Option<TrayItems>>);
@@ -58,6 +64,14 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         s.autostart,
         None::<&str>,
     )?;
+    let claude = CheckMenuItem::with_id(
+        app,
+        "claude-hooks",
+        "Claude Code'u bağla",
+        true,
+        crate::hooks::claude_hooks_installed(app.clone()),
+        None::<&str>,
+    )?;
     let toggle = MenuItem::with_id(app, "toggle", "Adayı gizle", true, None::<&str>)?;
 
     let focus_refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> =
@@ -77,6 +91,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             &glass_menu,
             &tint,
             &PredefinedMenuItem::separator(app)?,
+            &claude,
             &autostart,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?,
@@ -97,7 +112,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         glass,
         tint,
         autostart,
+        claude,
         toggle,
+        menu,
     }))));
     Ok(())
 }
@@ -109,6 +126,13 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
         "toggle" => toggle_window(app),
         "reset-position" => reset_position(app),
         "tint" => settings::update(app, |s| s.tint = !s.tint),
+        "claude-hooks" => {
+            let enable = !crate::hooks::claude_hooks_installed(app.clone());
+            let now = crate::hooks::set_installed(app, enable);
+            if let Some(items) = &*app.state::<TrayState>().0.lock().unwrap() {
+                let _ = items.claude.set_checked(now);
+            }
+        }
         "autostart" => {
             let enabled = !app.state::<settings::SettingsStore>().get().autostart;
             settings::set_autostart(app, enabled);
@@ -122,6 +146,22 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
             }
         }
     }
+}
+
+/// Ayar menüsünü imlecin olduğu yerde açar (sağ tık / dişli düğmesi).
+#[tauri::command]
+pub fn open_menu(app: AppHandle, window: WebviewWindow) {
+    let Some(state) = app.try_state::<TrayState>() else { return };
+    let menu = {
+        let guard = state.0.lock().unwrap();
+        let Some(items) = &*guard else { return };
+        // settings.json elle değiştirilmiş olabilir; onay işaretini tazele.
+        let _ = items
+            .claude
+            .set_checked(crate::hooks::claude_hooks_installed(app.clone()));
+        items.menu.clone()
+    };
+    let _ = window.popup_menu(&menu);
 }
 
 fn toggle_window(app: &AppHandle) {
