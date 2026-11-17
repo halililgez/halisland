@@ -11,6 +11,8 @@ import SystemPanel from "./components/SystemPanel.vue";
 import PowerPanel from "./components/PowerPanel.vue";
 import ClipboardPanel from "./components/ClipboardPanel.vue";
 import TodayPanel from "./components/TodayPanel.vue";
+import ControlsPanel from "./components/ControlsPanel.vue";
+import { useControls } from "./composables/useControls";
 import { useClipboard } from "./composables/useClipboard";
 import { useSystemStats } from "./composables/useSystemStats";
 import { useClock } from "./composables/useClock";
@@ -52,10 +54,11 @@ const focusColor = computed(() =>
 );
 
 /** Açık adanın sekmeleri. Ayarlar sekme değil, dişliyle açılan ayrı sayfa. */
-type Tab = "main" | "today" | "clipboard" | "system" | "power";
+type Tab = "main" | "today" | "controls" | "clipboard" | "system" | "power";
 const TABS: { id: Tab; label: string }[] = [
   { id: "main", label: "Ana" },
   { id: "today", label: "Bugün" },
+  { id: "controls", label: "Kontrol" },
   { id: "clipboard", label: "Pano" },
   { id: "system", label: "Sistem" },
   { id: "power", label: "Güç" },
@@ -80,6 +83,9 @@ watch(island.expanded, (open) => {
 const systemStats = useSystemStats(
   computed(() => island.expanded.value && isActive("system")),
 );
+
+/** Ses ve radyolar; yalnızca Kontrol sekmesi görünürken sorulur. */
+const controls = useControls(computed(() => island.expanded.value && isActive("controls")));
 
 /** Pano geçmişi; liste yalnızca sekme görünürken yenilenir. */
 const clip = useClipboard(computed(() => island.expanded.value && isActive("clipboard")));
@@ -280,6 +286,20 @@ const islandStyle = computed(() => {
         :focus="{ state: focus.state.value, label: focus.label.value, progress: focus.progress.value }"
         @focus-toggle="focus.toggle()"
         @focus-reset="focus.reset()"
+      />
+
+      <ControlsPanel
+        class="page"
+        :inert="!isActive('controls')"
+        :audio="controls.audio.value"
+        :radios="controls.radios.value"
+        :audio-error="controls.audioError.value"
+        :radio-error="controls.radioError.value"
+        :busy="controls.busy.value"
+        @volume="controls.setVolume"
+        @mute="controls.toggleMute"
+        @radio="controls.toggleRadio"
+        @drag="(d: boolean) => (controls.dragging.value = d)"
       />
 
       <ClipboardPanel
