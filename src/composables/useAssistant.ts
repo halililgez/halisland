@@ -104,6 +104,7 @@ type StreamEvent =
   | { type: "thinking"; text: string }
   | { type: "token"; text: string }
   | { type: "tool"; text: string; approved?: boolean }
+  | { type: "retry" }
   | { type: "confirm"; id: string; message: string; text: string }
   | { type: "confirm-end"; id: string; approved: boolean }
   | { type: "done"; tokensPerSec?: number }
@@ -463,6 +464,11 @@ export function useAssistant(active: Ref<boolean>, enabled: Ref<boolean>, provid
         break;
       case "token":
         reply.content += e.text;
+        break;
+      case "retry":
+        // Model araç çağırmadan bir iş yaptığını söyledi; backend cevabı
+        // yeniden yazdırıyor, yazılan yanlış kısım silinir.
+        reply.content = "";
         break;
       case "tool":
         reply.tools = [...(reply.tools ?? []), { text: e.text, ok: e.approved !== false }];

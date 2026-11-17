@@ -43,6 +43,7 @@ public sealed record Memory(long Id, string Text, long Created);
 /// "token" (cevap parçası), "tool" (araç çalıştı; Text kullanıcıya gösterilecek özet; Approved false ise iş yapılmadı),
 /// "confirm" (araç kullanıcı onayı bekliyor: Id, Message soru, Text ayrıntı),
 /// "confirm-end" (onay cevaplandı ya da süresi doldu: Id, Approved),
+/// "retry" (model araç çağırmadan bir iş yaptığını söyledi; yazılan cevap silinir, yenisi gelir),
 /// "done" (cevap bitti, istatistikler), "title" (sohbetin yeni başlığı) ya da "error".
 /// </summary>
 public sealed record StreamEvent(
