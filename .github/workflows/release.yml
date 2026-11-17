@@ -42,9 +42,23 @@ jobs:
       - name: Bağımlılıklar
         run: npm ci
 
+      # Derleme parametreleri (kök dizindeki features.json). "assistant": false
+      # ise asistan backend'i derlenmez ve kurulum dosyasına girmez.
+      - name: Parametreler
+        id: features
+        shell: bash
+        run: |
+          assistant=$(node -p "require('./features.json').assistant === true")
+          echo "assistant=$assistant" >> "$GITHUB_OUTPUT"
+          if [ "$assistant" = "true" ]; then
+            echo "config=--config src-tauri/tauri.release.conf.json" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Asistan: $assistant"
+
       # Asistan backend'i: tek dosyalık exe, kurulum dosyasına
       # tauri.release.conf.json ile `assistant/` altına girer.
       - name: Asistan (.NET) yayını
+        if: steps.features.outputs.assistant == 'true'
         run: dotnet publish assistant -c Release -r win-x64 -o src-tauri/assistant-bin
 
       - name: Etiket ile uygulama sürümü aynı mı?
@@ -68,11 +82,11 @@ jobs:
           releaseName: Halisland ${{ github.ref_name }}
           releaseBody: Kurulum için aşağıdaki `Halisland_..._x64-setup.exe` dosyasını indir.
           releaseDraft: true
-          args: --bundles nsis --config src-tauri/tauri.release.conf.json
+          args: --bundles nsis ${{ steps.features.outputs.config }}
 
       - name: Yalnızca derle
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npm run tauri build -- --bundles nsis --config src-tauri/tauri.release.conf.json
+        run: npm run tauri build -- --bundles nsis ${{ steps.features.outputs.config }}
 
       - name: Kurulum dosyasını yükle
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}

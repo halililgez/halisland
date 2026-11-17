@@ -104,7 +104,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         s.clipboard,
         None::<&str>,
     )?;
-    let assistant = if cfg!(windows) {
+    let assistant = if cfg!(windows) && crate::assistant::ENABLED {
         Some(CheckMenuItem::with_id(
             app,
             "assistant",
@@ -197,7 +197,7 @@ fn handle(app: &AppHandle, id: &str) {
             }
         }
         "assistant" => {
-            if cfg!(windows) {
+            if cfg!(windows) && crate::assistant::ENABLED {
                 settings::update(app, |s| s.assistant = !s.assistant);
                 crate::assistant::apply(app);
             }

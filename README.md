@@ -38,7 +38,7 @@ GitHub Actions kurulum dosyasını derleyip **taslak** bir release oluşturur; G
 
 Gerekenler: [Node.js](https://nodejs.org) 20+, [Rust](https://rustup.rs), [.NET 10 SDK](https://dotnet.microsoft.com/download) (asistan) ve Tauri'nin [platform gereksinimleri](https://tauri.app/start/prerequisites/).
 
-`npm run tauri dev` asistan backend'ini (`assistant/`) `dotnet run` ile kendisi başlatır; ilk açılışta derlendiği için sekme birkaç saniye "Asistan açılıyor…" der.
+Asistan bir derleme parametresine bağlıdır: kök dizindeki `features.json`'da `"assistant": false` iken asistan hiç başlatılmaz, sekmesi, ayar anahtarı ve tepsi menüsündeki maddesi görünmez, sürüm iş akışı da backend'i kurulum dosyasına koymaz. Asistan üzerinde çalışırken `true` yap. Açıkken `npm run tauri dev` asistan backend'ini (`assistant/`) `dotnet run` ile kendisi başlatır; ilk açılışta derlendiği için sekme birkaç saniye "Asistan açılıyor…" der.
 
 ```bash
 npm install
@@ -53,7 +53,7 @@ cd src-tauri && cargo build        # Rust tarafı
 dotnet build assistant             # asistan backend'i
 ```
 
-Kurulum dosyası asistanı da içerir; önce backend yayınlanır:
+Kurulum dosyası (`features.json`'da `"assistant": true` ise) asistanı da içerir; önce backend yayınlanır:
 
 ```bash
 dotnet publish assistant -c Release -r win-x64 -o src-tauri/assistant-bin

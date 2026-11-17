@@ -1,5 +1,9 @@
 //! Yerel asistan backend'i (`assistant/`, .NET).
 //!
+//! Derleme parametresi: kök dizindeki `features.json`'da `"assistant": false`
+//! ise (build.rs) asistan hiç başlatılmaz, tepsi menüsünde ve arayüzde
+//! görünmez, sürümde backend kurulum dosyasına girmez (release.yml).
+//!
 //! Asistan isteğe bağlıdır (Faz 23): ayarlarda ya da tepsi menüsünde
 //! "Asistan" açılmadıkça backend hiç başlatılmaz. Açıkken Windows'ta
 //! Halisland ile birlikte alt süreç olarak başlar, kapanınca durur. Arayüz
@@ -60,10 +64,13 @@ pub struct AssistantInfo {
     token: String,
 }
 
+/// features.json'daki "assistant" (build.rs).
+pub const ENABLED: bool = cfg!(halisland_assistant);
+
 #[tauri::command]
 pub fn assistant_info(state: State<'_, AssistantState>) -> AssistantInfo {
     AssistantInfo {
-        supported: cfg!(windows),
+        supported: cfg!(windows) && ENABLED,
         url: format!("http://127.0.0.1:{PORT}"),
         token: state.token.clone(),
     }
@@ -156,7 +163,7 @@ pub fn apply(app: &AppHandle) {
         let state = app.state::<AssistantState>();
         let _guard = state.lifecycle.lock();
         stop(&app);
-        if app.state::<SettingsStore>().get().assistant {
+        if ENABLED && app.state::<SettingsStore>().get().assistant {
             wait_port_free(Duration::from_secs(5));
             start(&app);
         }
@@ -165,7 +172,7 @@ pub fn apply(app: &AppHandle) {
 
 /// Açılışta: asistan açıksa backend'i başlatır.
 pub fn start_if_enabled(app: &AppHandle) {
-    if app.state::<SettingsStore>().get().assistant {
+    if ENABLED && app.state::<SettingsStore>().get().assistant {
         start(app);
     }
 }
