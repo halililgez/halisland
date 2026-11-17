@@ -13,12 +13,17 @@
 //! CompactBinary) tutulur ve Windows bu değeri izler. Biçim:
 //! - `[0..4]` "CB" başlığı (`43 42 01 00`), `[10..15]` değişiklik zamanı,
 //! - `[18]` iç yapının uzunluğu, `[19..23]` iç yapının "CB" başlığı,
-//! - gece ışığı açıkken iç başlığın hemen ardından `10 00` gelir.
+//! - gece ışığı açıkken iç başlığın hemen ardından `10 00` gelir,
+//! - sonra `D0 0A 02` alanı. Gece ışığı hiç kullanılmamışsa bu alan yoktur
+//!   (38 bayt); Windows o hâlde yalnızca `10 00` eklenmesini yok sayıyor
+//!   (Halil'in makinesinde görüldü). Elle bir kez açıp kapatınca alan
+//!   eklenip 41 baytlık biçime geçiyor.
 //!
-//! Açmak `10 00` eklemek ve uzunluğu 2 artırmak, kapatmak tersi; ardından
-//! zaman damgası bir artırılır ki Windows değişikliği görsün. Değer yalnızca
-//! bu yapı tutarlıysa yazılır; ilk yazmadan önce orijinali uygulama
-//! klasörüne yedeklenir (`nightlight-backup.bin`).
+//! Değiştirirken iç yapı her zaman `[10 00] D0 0A 02 …` biçiminde yeniden
+//! kurulur, uzunluk baytı güncellenir, zaman damgası bir artırılır ki Windows
+//! değişikliği görsün. Değer yalnızca bu yapı tutarlıysa yazılır; ilk
+//! yazmadan önce orijinali uygulama klasörüne yedeklenir
+//! (`nightlight-backup.bin`).
 
 use serde::Serialize;
 
@@ -43,6 +48,8 @@ pub struct DisplayState {
 
 const CB: [u8; 4] = [0x43, 0x42, 0x01, 0x00];
 const ON_MARK: [u8; 2] = [0x10, 0x00];
+/// Gece ışığı bir kez kullanılınca Windows'un eklediği alan (alan 10, int32 = 1).
+const STATE_FIELD: [u8; 3] = [0xD0, 0x0A, 0x02];
 
 /// Kayıt değerinden gece ışığının açık olup olmadığı. Biçim tanınmazsa `None`.
 pub fn night_light_parse(d: &[u8]) -> Option<bool> {
@@ -61,17 +68,23 @@ pub fn night_light_toggle(d: &[u8], on: bool) -> Option<Vec<u8>> {
     if current == on {
         return None;
     }
-    let mut out = Vec::with_capacity(d.len() + 2);
-    if on {
-        out.extend_from_slice(&d[..23]);
-        out.extend_from_slice(&ON_MARK);
-        out.extend_from_slice(&d[23..]);
-        out[18] += 2;
-    } else {
-        out.extend_from_slice(&d[..23]);
-        out.extend_from_slice(&d[25..]);
-        out[18] -= 2;
+    // İç yapının geri kalanı: işaret ve durum alanı (varsa) çıkarılır,
+    // sonra her zaman `[10 00] D0 0A 02 …` biçiminde yeniden kurulur.
+    let mut rest = &d[23..];
+    if rest.starts_with(&ON_MARK) {
+        rest = &rest[2..];
     }
+    if rest.starts_with(&STATE_FIELD) {
+        rest = &rest[3..];
+    }
+    let mut out = Vec::with_capacity(d.len() + 5);
+    out.extend_from_slice(&d[..23]);
+    if on {
+        out.extend_from_slice(&ON_MARK);
+    }
+    out.extend_from_slice(&STATE_FIELD);
+    out.extend_from_slice(rest);
+    out[18] = u8::try_from(out.len() - 22).ok()?;
     // Zaman damgası (varint): taşmayan ilk baytı bir artır.
     if let Some(b) = out[10..15].iter_mut().find(|b| **b != 0xff) {
         *b += 1;
@@ -532,18 +545,39 @@ mod tests {
     }
 
     #[test]
-    fn ac_kapa_geri_doner() {
+    fn ilk_kullanimda_durum_alani_eklenir() {
+        // Hiç kullanılmamış (38 bayt) değerden açınca `10 00` ile birlikte
+        // `D0 0A 02` de eklenmeli; yoksa Windows değişikliği yok sayıyor.
         let on = night_light_toggle(&WIN11_OFF, true).unwrap();
-        assert_eq!(on.len(), 40);
-        assert_eq!(on[18], 0x12);
-        assert_eq!(&on[23..25], &ON_MARK);
+        assert_eq!(on.len(), 43);
+        assert_eq!(on[18], 0x15);
+        assert_eq!(&on[23..28], &[0x10, 0x00, 0xD0, 0x0A, 0x02]);
         assert_eq!(on[10], 0xC1, "zaman damgası artmalı");
         assert_eq!(night_light_parse(&on), Some(true));
 
         let off = night_light_toggle(&on, false).unwrap();
         assert_eq!(night_light_parse(&off), Some(false));
-        assert_eq!(off.len(), WIN11_OFF.len());
-        assert_eq!(off[11..], WIN11_OFF[11..]);
+        assert_eq!(off.len(), 41);
+        assert_eq!(&off[23..26], &STATE_FIELD);
+        assert_eq!(off[26..], WIN11_OFF[23..], "zaman alanı ve sonrası korunmalı");
+    }
+
+    /// Windows'tan elle bir kez açıp kapattıktan sonra okunan gerçek değer (kapalı).
+    const WIN11_USED_OFF: [u8; 41] = [
+        0x43, 0x42, 0x01, 0x00, 0x0A, 0x02, 0x01, 0x00, 0x2A, 0x06, 0xF4, 0xE3, 0xF0, 0xD7, 0x06,
+        0x2A, 0x2B, 0x0E, 0x13, 0x43, 0x42, 0x01, 0x00, 0xD0, 0x0A, 0x02, 0xC6, 0x14, 0x81, 0xEE,
+        0xFB, 0xF6, 0x9B, 0xD0, 0xDD, 0xEE, 0x01, 0x00, 0x00, 0x00, 0x00,
+    ];
+
+    #[test]
+    fn kullanilmis_deger_ac_kapa() {
+        assert_eq!(night_light_parse(&WIN11_USED_OFF), Some(false));
+        let on = night_light_toggle(&WIN11_USED_OFF, true).unwrap();
+        assert_eq!((on.len(), on[18]), (43, 0x15));
+        assert_eq!(&on[23..28], &[0x10, 0x00, 0xD0, 0x0A, 0x02]);
+        let off = night_light_toggle(&on, false).unwrap();
+        assert_eq!(off[11..], WIN11_USED_OFF[11..]);
+        assert_eq!(off[10], WIN11_USED_OFF[10] + 2);
     }
 
     #[test]
