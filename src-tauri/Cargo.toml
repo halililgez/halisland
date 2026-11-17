@@ -23,8 +23,10 @@ tiny_http = "0.12"
 
 [target.'cfg(windows)'.dependencies]
 base64 = "0.22"
+windows-numerics = "0.3"
 windows = { version = "0.62", features = [
   "Foundation",
+  "Foundation_Numerics",
   "Media_Control",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
@@ -35,7 +37,12 @@ windows = { version = "0.62", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
   "Storage_Streams",
+  "System",
+  "UI",
+  "UI_Composition",
+  "UI_Composition_Desktop",
   "Win32_System_WinRT",
+  "Win32_System_WinRT_Composition",
 ] }
 
 [profile.release]

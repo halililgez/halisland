@@ -7,7 +7,7 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 ## Özellikler
 
 - **Ada:** Şeffaf, her zaman üstte, görev çubuğunda görünmez. Üzerine gelince açılır, ayrılınca kapanır. Tutup sürükleyebilirsin.
-- **Gerçek cam (Windows):** Adanın arkasındaki masaüstü bulanık görünür (acrylic). macOS'ta şimdilik koyu yarı saydam arka plan.
+- **Gerçek cam (Windows):** Adanın arkasındaki masaüstü bulanık görünür. Windows 11'de Windows.UI.Composition ile oval kırpılmış bulanıklık, Windows 10'da acrylic. macOS'ta şimdilik koyu yarı saydam arka plan.
 - **Odak sayacı:** 25 dakikalık sayaç (başlat / duraklat / sıfırla). Çalışırken kompakt adada kalan süre görünür.
 - **Claude Code:** Claude çalışırken kutucuk turuncu parlar, onay beklerken sarıya döner. İş bitince mavi olur, sen adaya bakınca yeşile döner ve söner. Açık adada proje adı, son istemin, şu an ne yaptığı (komut çalıştırıyor, dosya düzenliyor...), neden beklediği ve değişen dosyalar görünür. **Terminale dön** düğmesi Claude'un çalıştığı pencereyi (Windows Terminal, VS Code, Claude masaüstü...) öne getirir.
 - **Müzik (Windows):** Spotify, tarayıcıda YouTube ya da sistem medya kontrollerine kayıt olan her uygulamada çalan şarkı, kapak ve ilerleme. Oynat/duraklat, ileri ve geri. Ada, kapağın rengini alır. macOS desteği sonraki fazlarda.
@@ -95,7 +95,8 @@ src/
 src-tauri/src/
   lib.rs                   uygulama kurulumu
   island.rs                pencere konumu ve boyutu (resize_island komutu)
-  glass.rs                 cam efekti (Windows acrylic + SetWindowRgn)
+  glass.rs                 cam efekti (Windows 10 acrylic, pencere bölgesi, başlık şeridi koruması)
+  backdrop.rs              Windows 11 oval bulanıklık (Windows.UI.Composition)
   settings.rs              ayarlar (settings.json), konum hatırlama, açılışta başlatma
   tray.rs                  tepsi simgesi ve menüsü (sağ tık menüsü de bu)
   hooks.rs                 Claude Code hook'larını ~/.claude/settings.json'a kurar/kaldırır

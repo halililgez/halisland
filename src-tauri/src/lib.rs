@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod backdrop;
 mod claude;
 mod glass;
 mod hooks;
@@ -60,6 +62,9 @@ pub fn run() {
                 island::place_top_center(&window)?;
             }
             window.show()?;
+            // Cam katmanı (Windows 11: oval bulanıklık) tepsi menüsünden önce
+            // kurulmalı; menü "Cam efekti"nin açık olup olmadığına bakıyor.
+            glass::init(&window);
 
             tray::setup(&handle)?;
             glass::start_frame_guard(handle.clone());
