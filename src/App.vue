@@ -129,30 +129,32 @@ const islandStyle = computed(() => {
         <span class="brand" v-bind="drag">Halisland</span>
         <span class="header-right" v-bind="drag">
           <template v-if="view === 'settings'">
-            <button
-              class="chip lock"
-              :class="{ active: settings.locked }"
-              :title="settings.locked ? 'Konum kilitli; sürüklemek için kilidi aç' : 'Konumu kilitle'"
-              @click="settingsAction('lock')"
-            >
-              <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
-                <rect x="5" y="11" width="14" height="10" rx="2.5" fill="currentColor" />
-                <path
-                  :d="settings.locked ? 'M8 11V8a4 4 0 0 1 8 0v3' : 'M8 11V8a4 4 0 0 1 7.6-1.7'"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.2"
-                  stroke-linecap="round"
-                />
-              </svg>
-              {{ settings.locked ? "Kilitli" : "Kilitle" }}
-            </button>
             <button class="chip" @click="settingsAction('reset-position')">Konumu sıfırla</button>
             <button class="chip danger" @click="settingsAction('quit')">Çıkış</button>
           </template>
           <span v-else class="mono" v-bind="drag">{{ time }}</span>
+          <!-- Konum kilidi: hızlı erişim için dişlinin hemen yanında. -->
           <button
-            class="gear"
+            class="icon-btn"
+            :class="{ active: settings.locked }"
+            :title="settings.locked ? 'Konum kilitli; sürüklemek için kilidi aç' : 'Konumu kilitle'"
+            :aria-label="settings.locked ? 'Konum kilidini aç' : 'Konumu kilitle'"
+            :aria-pressed="settings.locked"
+            @click="settingsAction('lock')"
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="10" rx="2.5" fill="currentColor" />
+              <path
+                :d="settings.locked ? 'M8 11V8a4 4 0 0 1 8 0v3' : 'M8 11V8a4 4 0 0 1 7.6-1.7'"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          <button
+            class="gear icon-btn"
             :class="{ active: view === 'settings' }"
             title="Ayarlar"
             aria-label="Ayarlar"
@@ -385,7 +387,8 @@ const islandStyle = computed(() => {
   gap: 8px;
 }
 
-.gear {
+/* Başlıktaki yuvarlak simge düğmeleri: kilit ve dişli. */
+.icon-btn {
   display: grid;
   place-items: center;
   width: 20px;
@@ -398,8 +401,12 @@ const islandStyle = computed(() => {
     color 0.2s ease;
 }
 
-.gear:hover,
-.gear.active {
+.icon-btn + .icon-btn {
+  margin-left: -4px;
+}
+
+.icon-btn:hover,
+.icon-btn.active {
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
 }
@@ -469,17 +476,6 @@ const islandStyle = computed(() => {
 }
 
 .header .chip:hover {
-  color: var(--text);
-}
-
-.header .chip.lock {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.header .chip.lock.active {
-  background: rgba(255, 255, 255, 0.18);
   color: var(--text);
 }
 
