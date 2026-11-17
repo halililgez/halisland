@@ -30,13 +30,14 @@ pub fn run() {
             claude::claude_status,
             island::resize_island,
             island::cursor_over_island,
+            glass::glass_supported,
             glass::set_glass,
             glass::set_island_shape,
             hooks::claude_hooks_installed,
             media::media_control,
             media::media_artwork,
             settings::get_settings,
-            tray::open_menu
+            tray::settings_action
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Moved(_) = event
