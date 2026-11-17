@@ -14,6 +14,9 @@
 //!   taşımamak için).
 //! - macOS'ta izleyici henüz yok; liste boş kalır.
 
+// macOS'ta izleyici olmadığı için geçmişe ekleme yolu orada kullanılmıyor.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use base64::Engine;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
@@ -186,7 +189,6 @@ impl History {
 pub struct ClipStore {
     history: Mutex<History>,
     /// Kendi kopyalamamızdan sonraki pano sıra numarası; izleyici bunu atlar.
-    #[cfg_attr(not(windows), allow(dead_code))]
     own_seq: Mutex<Option<u32>>,
 }
 
@@ -212,7 +214,6 @@ fn is_link(text: &str) -> bool {
 }
 
 /// Panodaki metni geçmiş içeriğine çevirir. Boş ya da çok uzunsa `None`.
-#[cfg_attr(not(windows), allow(dead_code))]
 fn text_content(text: String) -> Option<(u64, Content)> {
     if text.trim().is_empty() || text.len() > MAX_TEXT_BYTES {
         return None;
@@ -221,7 +222,6 @@ fn text_content(text: String) -> Option<(u64, Content)> {
 }
 
 /// Panodaki görseli (RGBA) PNG'ye ve küçük resme çevirir.
-#[cfg_attr(not(windows), allow(dead_code))]
 fn image_content(width: u32, height: u32, rgba: Vec<u8>) -> Option<(u64, Content)> {
     let hash = hash_of(("image", width, height, &rgba));
     let img = image::RgbaImage::from_raw(width, height, rgba)?;
