@@ -40,6 +40,7 @@
     "longDescription": "Ekranın üst ortasında duran cam görünümlü ada: saat, odak sayacı, çalan müzik ve Claude Code durumu.",
     "category": "Productivity",
     "copyright": "© 2026 Halil İlgez",
+    "license": "MIT",
     "windows": {
       "nsis": {
         "installMode": "currentUser",

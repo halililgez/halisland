@@ -2,7 +2,7 @@
 
 Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında duran, üzerine gelince açılan cam görünümlü bir ada: saat, odak sayacı, Claude Code durumu ve çalan müzik.
 
-> Durum: erken geliştirme. Fazlar için `docs/ILERLEME.md`.
+> Durum: ilk sürüm (v0.1.0), Windows. macOS desteği sürüyor. Fazlar için `docs/ILERLEME.md`.
 
 ## Özellikler
 
@@ -17,7 +17,7 @@ Windows ve macOS için masaüstü **Dynamic Island**. Ekranın üst ortasında d
 
 [Releases](https://github.com/halililgez/halisland/releases) sayfasından `Halisland_<sürüm>_x64-setup.exe` dosyasını indirip çalıştır. Yönetici izni istemez, yalnızca senin kullanıcına kurulur.
 
-Yeni sürüm çıkarmak için `src-tauri/tauri.conf.json` ve `package.json` içindeki sürümü artır, sonra:
+Yeni sürüm çıkarmak için `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` ve `package.json` içindeki sürümü artır, sonra:
 
 ```bash
 git tag v0.2.0
@@ -105,3 +105,11 @@ src-tauri/src/
   media.rs                 çalan müzik (Windows SMTC)
 docs/ILERLEME.md           fazlar ve geliştirme günlüğü
 ```
+
+## Katkı
+
+Hata bildirimleri, fikirler ve pull request'ler açık. Başlamadan önce [CONTRIBUTING.md](CONTRIBUTING.md)'ye göz at. Güvenlik açıkları için [SECURITY.md](SECURITY.md).
+
+## Lisans
+
+[MIT](LICENSE) © 2026 Halil İlgez

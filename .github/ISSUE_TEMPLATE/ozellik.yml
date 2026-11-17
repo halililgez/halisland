@@ -1,0 +1,16 @@
+name: Özellik önerisi
+description: Adaya yeni bir şey eklensin
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: fikir
+    attributes:
+      label: Ne istiyorsun?
+      description: Adada ne görmek ya da yapabilmek istersin?
+    validations:
+      required: true
+  - type: textarea
+    id: neden
+    attributes:
+      label: Neden?
+      description: Hangi durumda işine yarar?
