@@ -5,6 +5,7 @@ mod clipboard;
 mod glass;
 mod hooks;
 mod island;
+mod location;
 mod media;
 mod power;
 mod settings;
@@ -40,6 +41,7 @@ pub fn run() {
             clipboard::clipboard_clear,
             island::resize_island,
             island::cursor_over_island,
+            location::device_location,
             glass::glass_supported,
             glass::set_glass,
             glass::set_island_shape,
@@ -48,6 +50,7 @@ pub fn run() {
             media::media_artwork,
             power::power_action,
             settings::get_settings,
+            settings::set_weather_city,
             system::system_stats,
             tray::settings_action
         ])
