@@ -31,3 +31,6 @@ src-tauri/gen/schemas
 assistant/bin
 assistant/obj
 src-tauri/assistant-bin
+
+# graphify bilgi grafiği çıktısı
+graphify-out/
